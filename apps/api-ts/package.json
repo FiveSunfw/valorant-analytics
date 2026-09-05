@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@valorant/config": "*",
     "@valorant/domain": "*",
     "fastify": "^5.2.1",
     "ioredis": "^5.4.2",

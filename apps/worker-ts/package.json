@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@valorant/config": "*",
     "@valorant/domain": "*",
     "amqplib": "^0.10.8",
     "pg": "^8.13.1",

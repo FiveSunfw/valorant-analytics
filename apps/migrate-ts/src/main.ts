@@ -1,5 +1,8 @@
+import { loadLocalEnv } from "@valorant/config";
 import { Pool } from "pg";
 import { migrate } from "./migration.js";
+
+loadLocalEnv();
 
 const databaseUrl = process.env.DATABASE_URL ?? "postgresql://valorant:valorant_dev@127.0.0.1:15432/valorant";
 
