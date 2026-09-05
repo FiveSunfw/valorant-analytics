@@ -1,0 +1,72 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: valorant
+      POSTGRES_USER: valorant
+      POSTGRES_PASSWORD: valorant_dev
+    # Host 5432 is occupied outside this Compose project; PostgreSQL remains 5432 in-container.
+    ports: ["15432:5432"]
+    volumes: ["./data/postgres:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  redis:
+    image: redis:7-alpine
+    # Windows already runs an unrelated legacy Redis service on 6379.
+    ports: ["16379:6379"]
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    ports: ["5672:5672", "15672:15672"]
+  api:
+    profiles: ["containerized"]
+    build:
+      context: .
+      dockerfile: apps/api-ts/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://valorant:valorant_dev@postgres:5432/valorant
+      REDIS_URL: redis://redis:6379/0
+      RABBITMQ_URL: amqp://rabbitmq:5672
+    ports: ["8000:8000"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+      rabbitmq:
+        condition: service_started
+  worker:
+    profiles: ["containerized"]
+    build:
+      context: .
+      dockerfile: apps/worker-ts/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql://valorant:valorant_dev@postgres:5432/valorant
+      RABBITMQ_URL: amqp://rabbitmq:5672
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+      rabbitmq:
+        condition: service_started
+  migrate:
+    profiles: ["containerized"]
+    build:
+      context: .
+      dockerfile: apps/migrate-ts/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://valorant:valorant_dev@postgres:5432/valorant
+    depends_on:
+      postgres:
+        condition: service_healthy
+  web:
+    profiles: ["containerized"]
+    build: ./apps/web
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports: ["3000:3000"]
+    depends_on: [api]

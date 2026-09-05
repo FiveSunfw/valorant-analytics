@@ -1,0 +1,31 @@
+# Local secrets
+.env
+.env.*
+!.env.example
+AGENTS.md
+HANDOFF.md
+
+# Dependencies
+node_modules/
+.npm-cache/
+
+# Local runtimes and build output
+.venv/
+.next/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Generated declarations and JavaScript beside TypeScript domain source
+packages/domain/src/*.js
+packages/domain/src/*.js.map
+packages/domain/src/*.d.ts
+
+# Local services and diagnostics
+data/
+logs/
+*.log
+
+# Python cache
+__pycache__/
+*.py[cod]

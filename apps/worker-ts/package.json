@@ -1,0 +1,25 @@
+{
+  "name": "@valorant/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@valorant/domain": "*",
+    "amqplib": "^0.10.8",
+    "pg": "^8.13.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/amqplib": "^0.10.8",
+    "@types/pg": "^8.11.10",
+    "tsx": "^4.19.2",
+    "vitest": "^2.1.8"
+  }
+}
