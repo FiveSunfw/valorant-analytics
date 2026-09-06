@@ -1,132 +1,119 @@
-# VALORANT Analytics Knowledge Base Architecture
+# VALORANT Analytics 知识库架构
 
-- Version: `1.0.0`
-- Status: Final baseline
-- Date: 2026-09-06
-- Scope: AI-assisted multimodal knowledge ingestion, review, retrieval, citations, and Knowledge MCP
+- 版本：`1.0.0`
+- 状态：最终基线
+- 日期：2026-09-06
+- 范围：AI 辅助多模态知识入库、审核、检索、引用和 Knowledge MCP
 
-## 1. Purpose and Boundary
+## 1. 目的和边界
 
-The knowledge base contains reviewed, versioned, source-linked coaching and game knowledge. It is not the source of truth for a player's matches.
-
-```text
-Player facts:
-  PostgreSQL + deterministic analytics
-
-General knowledge:
-  knowledge sources + reviewed chunks + retrieval
-
-Personalized answer:
-  player evidence + knowledge evidence + bounded interpretation
-```
-
-The knowledge base may explain a player fact, but it must not manufacture a player fact. For example, a reviewed Lotus coaching source can explain a general risk of an isolated early fight; only the analytics layer can establish whether a particular player had a high first-death rate.
-
-## 2. Source and Rights Policy
-
-Supported sources:
+知识库保存经过审核、版本化、可追溯来源的教练知识和游戏知识。它不是玩家比赛事实的来源。
 
 ```text
-official documentation and patch notes
-licensed or permissioned articles
-creator videos and transcripts permitted for use
-coaching guides
-maps, diagrams, screenshots, and tables with permitted use
+玩家事实：PostgreSQL + 确定性分析
+通用知识：知识源 + 审核后的知识块 + 检索
+个性化答案：玩家证据 + 知识证据 + 受限解释
 ```
 
-Every source stores:
+知识库可以解释玩家事实，但不能制造玩家事实。审核后的 Lotus 教练资料可以解释孤立前压的通用风险；只有分析层才能确认某个玩家的首死率是否升高。
+
+## 2. 来源和版权策略
+
+支持的来源：
 
 ```text
-source URL or local path
-author or publisher
-publication date
-license or permission status
-game patch or version if known
-content hash
-ingestion version
-review status
+官方文档和补丁说明
+获得授权的文章
+允许使用的创作者视频和转录
+教练指南
+获得许可的地图、战术图、截图和表格
 ```
 
-Public availability does not imply redistribution rights. Prefer storing metadata, extracted text, embeddings, timestamps, and source links. Retain full media only when permitted by the source policy.
-
-Source lifecycle:
+每个来源必须保存：
 
 ```text
-raw -> extracted -> reviewed -> indexed -> stale or rejected
+来源 URL 或本地路径
+作者或发布者
+发布日期
+许可证或授权状态
+游戏补丁或版本
+内容 Hash
+入库版本
+审核状态
 ```
 
-Only `reviewed` content is searchable by production Agents.
+公开可访问不等于可以重新分发。优先保存元数据、抽取文本、Embedding、时间戳和来源链接。只有来源政策允许时才保存完整媒体。
 
-## 3. Knowledge Taxonomy
+来源生命周期：
+
+```text
+raw -> extracted -> reviewed -> indexed -> stale 或 rejected
+```
+
+只有 `reviewed` 内容才能进入生产检索索引。
+
+## 3. 知识分类
 
 ```text
 aim
-  - crosshair and mechanics
-  - movement and stopping
-  - first-shot discipline
-  - weapon practice
+  - 准星和基础机制
+  - 移动和急停
+  - 首发纪律
+  - 武器练习
 
 death_pattern
-  - first death
-  - isolated fight
-  - timing
-  - trade potential
-  - overextension
+  - 首死
+  - 孤立交火
+  - 时机
+  - 换人潜力
+  - 过度前压
 
 map
-  - layout
-  - site responsibilities
-  - default positions
-  - attack principles
-  - defense principles
-  - rotation and timing
+  - 地图布局
+  - 点位职责
+  - 默认站位
+  - 进攻原则
+  - 防守原则
+  - 转点和时机
 
 agent
-  - ability purpose
-  - initiation
-  - site control
-  - retake
-  - utility combinations
+  - 技能用途
+  - 先手
+  - 控点
+  - 回防
+  - 技能组合
 
 economy
-  - buy rules
-  - save rules
-  - half-buy
-  - bonus round
-  - ultimate economy
+  - 购买规则
+  - 存枪规则
+  - 半起
+  - 奖励局
+  - 大招经济
 
 round_decision
-  - opening plan
-  - mid-round adaptation
-  - post-plant
-  - retake
-  - clutch
+  - 开局计划
+  - 中局调整
+  - 下包后
+  - 回防
+  - 残局
 
 training
-  - drills
-  - practice plans
-  - review routines
-  - measurable goals
+  - 训练 Drill
+  - 训练计划
+  - 复盘流程
+  - 可量化目标
 ```
 
-Metadata filters should support:
+元数据应支持按以下条件过滤：
 
 ```text
-map
-side
-agent
-role
-weapon
-patch_version
-rank_range
-skill_level
-source_type
-trust_level
+map, side, agent, role, weapon, patch_version,
+rank_range, skill_level, source_type, trust_level
 ```
 
-## 4. Knowledge Unit Contract
+## 4. 知识单元契约
 
-The retrieval unit is a source-linked, atomic knowledge chunk rather than an arbitrary fixed-size slice:
+检索单元是带来源的原子知识块，不是随意固定长度的文本片段：
 
 ```ts
 export type KnowledgeChunk = {
@@ -159,28 +146,28 @@ export type KnowledgeChunk = {
 };
 ```
 
-A chunk should express one coherent claim. It must be possible to cite it by page, paragraph, video timestamp, table, or image region.
+每个知识块只表达一个完整观点，并且必须能够定位到页码、段落、视频时间、表格或图片区域。
 
-## 5. Multimodal Ingestion Pipeline
+## 5. 多模态入库流程
 
 ```text
-source manifest
-  -> permitted asset acquisition
-  -> hash and metadata
-  -> parsing
-  -> transcript / OCR / key frames
-  -> AI candidate extraction
-  -> duplicate and conflict analysis
-  -> human review
-  -> approved chunks
-  -> keyword index
-  -> optional vector index
+来源清单
+  -> 获取获准的资源
+  -> Hash 和元数据
+  -> 解析
+  -> 转录 / OCR / 关键帧
+  -> AI 抽取候选知识
+  -> 去重和冲突分析
+  -> 人工审核
+  -> 审核通过的知识块
+  -> 关键词索引
+  -> 可选向量索引
   -> Knowledge MCP
 ```
 
-### 5.1 Source Manifest
+### 5.1 来源清单
 
-Start with an explicit JSONL manifest, not an uncontrolled crawler:
+使用显式 JSONL 清单，不要直接做无控制爬虫：
 
 ```json
 {
@@ -196,24 +183,24 @@ Start with an explicit JSONL manifest, not an uncontrolled crawler:
 }
 ```
 
-### 5.2 Video
+### 5.2 视频
 
-The ingestion Worker performs:
+Worker 负责：
 
 ```text
-read manifest
-  -> verify source policy
-  -> calculate SHA-256
-  -> extract audio with FFmpeg
-  -> transcribe with timestamps
-  -> detect scene changes
-  -> extract key frames
-  -> run OCR and visual analysis
-  -> create candidate chunks
-  -> queue human review
+读取清单
+  -> 检查来源政策
+  -> 计算 SHA-256
+  -> FFmpeg 提取音频
+  -> 带时间戳转录
+  -> 检测场景变化
+  -> 抽取关键帧
+  -> OCR 和视觉分析
+  -> 生成候选知识块
+  -> 进入人工审核队列
 ```
 
-Do not embed the entire video. Store bounded segments with source timestamps:
+不要给整部视频做 Embedding，应保存带时间范围的片段：
 
 ```json
 {
@@ -228,68 +215,68 @@ Do not embed the entire video. Store bounded segments with source timestamps:
 }
 ```
 
-### 5.3 Images
+### 5.3 图片
 
-For maps, diagrams, screenshots, and tables:
+地图、示意图、截图和表格：
 
 ```text
-image
+图片
   -> OCR
-  -> visual caption
-  -> map and region extraction
-  -> bounding boxes when possible
-  -> source and patch metadata
-  -> human review
+  -> 视觉描述
+  -> 地图和区域提取
+  -> 尽可能生成边界框
+  -> 来源和补丁元数据
+  -> 人工审核
 ```
 
-Generated captions and detected regions must be marked as generated. They are not equivalent to official facts until reviewed.
+模型生成的描述和区域必须标记为 generated；审核前不能视为官方事实。
 
-### 5.4 Documents and Articles
+### 5.4 文档和文章
 
-Preserve heading hierarchy, paragraphs, tables, figures, page number, section, reading order, and source URL. A PDF table should retain row and column structure; flattening it into plain text is a known numeric-answer failure mode.
+保留标题层级、段落、表格、图、页码、章节、阅读顺序和来源 URL。表格必须保留行列结构，不能简单压平成普通文本。
 
-## 6. AI-Assisted Knowledge Operations
+## 6. AI 辅助知识操作
 
-AI is an extraction and review assistant, not the authority that silently publishes content.
+AI 是抽取和审核助手，不是可以静默发布内容的权威来源。
 
-AI may:
+AI 可以：
 
 ```text
-transcribe
-summarize
-extract atomic claims
-classify topic and claim type
-propose map / side / agent / patch metadata
-identify duplicates and conflicts
-generate review cases
-generate retrieval eval cases
+转录
+摘要
+抽取原子声明
+分类主题和声明类型
+建议地图 / 攻守 / 英雄 / 补丁元数据
+发现重复和冲突
+生成审核用例
+生成检索 Eval
 ```
 
-Deterministic code owns:
+确定性代码负责：
 
 ```text
-asset download and hashing
-job orchestration
-schema validation
-storage and status transitions
-embedding and indexing
-filtering and access control
-citation construction
+资源下载和 Hash
+任务编排
+Schema 校验
+状态流转
+Embedding 和索引
+过滤和访问控制
+引用构造
 ```
 
-Human review owns:
+人工审核负责：
 
 ```text
-rights and source trust
-patch validity
-ambiguous tactical claims
-conflicting advice
-final approval for production indexing
+版权和来源信任
+补丁有效性
+含糊的战术结论
+冲突建议
+生产索引的最终批准
 ```
 
-## 7. Versioned Prompt Assets for Ingestion
+## 7. 版本化入库 Prompt
 
-Ingestion prompts live in the application prompt registry and are versioned like code. The minimum prompt set is:
+入库 Prompt 位于应用 Prompt Registry 中，并像代码一样版本化。最低限度包括：
 
 ```text
 kb.source_normalize.v1
@@ -306,19 +293,11 @@ kb.knowledge_answer.v1
 kb.eval.judge.v1
 ```
 
-Each prompt must:
+每个 Prompt 必须请求准确 Schema、禁止无依据事实、保留来源位置、区分原文和生成字段、把歧义标为 `needs_review`，并在无法判断时返回机器可读错误而不是猜测。
 
-- request the exact schema;
-- prohibit unsupported facts;
-- preserve source location;
-- distinguish source text from generated fields;
-- mark ambiguity as `needs_review`;
-- include patch and source scope when available;
-- return a machine-readable error rather than guessing.
+## 8. 存储模型
 
-## 8. Storage Model
-
-Recommended PostgreSQL tables:
+推荐 PostgreSQL 表：
 
 ```text
 knowledge_sources
@@ -338,25 +317,25 @@ knowledge_embeddings
   chunk_id, embedding_model, embedding_version, vector
 ```
 
-Use PostgreSQL full-text search first. Add `pgvector` after retrieval evaluation proves that keyword and metadata search are insufficient. Do not introduce Milvus or Qdrant at the first vertical slice.
+先使用 PostgreSQL 全文检索。只有当检索评测证明关键词和元数据检索不足时，才增加 `pgvector`。第一阶段不引入 Milvus 或 Qdrant。
 
-## 9. Retrieval Pipeline
+## 9. 检索流程
 
-Knowledge retrieval is hybrid:
+知识检索采用混合方式：
 
 ```text
-user question
-  -> query and intent extraction
-  -> map / side / agent / patch filters
-  -> PostgreSQL keyword retrieval
-  -> optional pgvector retrieval
-  -> candidate merge and deduplication
-  -> rerank
-  -> bounded evidence pack
-  -> specialist or Supervisor synthesis
+用户问题
+  -> 查询和意图提取
+  -> 地图 / 攻守 / 英雄 / 补丁过滤
+  -> PostgreSQL 关键词检索
+  -> 可选 pgvector 检索
+  -> 候选合并和去重
+  -> 重排序
+  -> 有限证据包
+  -> 专家或 Supervisor 综合
 ```
 
-Example filters:
+例：
 
 ```json
 {
@@ -368,23 +347,11 @@ Example filters:
 }
 ```
 
-An evidence pack must include:
+证据包必须包含知识块 ID、来源 ID、信任级别、补丁版本、正文、页码/时间戳/图片区域和限制。最终答案要把知识证据和玩家证据分开引用。
 
-```text
-chunk ID
-source ID
-source trust
-patch version
-text
-page or timestamp or image region
-limitations
-```
+## 10. Knowledge MCP 接口
 
-Final answers cite knowledge evidence separately from player evidence.
-
-## 10. Knowledge MCP Interface
-
-The Knowledge MCP Server exposes narrow, read-only tools:
+只暴露窄范围的只读工具：
 
 ```text
 search_knowledge
@@ -395,125 +362,109 @@ get_patch_notes
 get_map_guide
 ```
 
-Rules:
+规则：不提供任意 SQL；结果必须有限且可分页；默认只返回审核通过内容；补丁过滤必须显式；每个结果包含来源和位置；外部证据标记为不可信数据；调用记录错误码、超时元数据和审计 Trace。
 
-- no arbitrary SQL;
-- bounded and paginated results;
-- reviewed content only by default;
-- explicit current-patch filtering;
-- every result includes source and location metadata;
-- external evidence is marked as untrusted data;
-- all calls have stable error codes, timeout metadata, and audit trace.
+领域实现与内部 TypeScript 适配器共享，MCP 只是适配和治理边界，不复制业务逻辑。
 
-The domain implementation is shared with internal TypeScript adapters. MCP is an adapter and governance boundary, not duplicate business logic.
-
-## 11. Combining Knowledge with Player Data
+## 11. 知识和玩家数据的组合
 
 ```text
-player question
-  -> authenticated player scope
-  -> deterministic period and metric selection
-  -> knowledge retrieval for general principles
-  -> specialist analysis
-  -> evidence validator
-  -> final synthesis
+玩家问题
+  -> 认证玩家范围
+  -> 确定性时间窗口和指标
+  -> 检索通用原则
+  -> 专家分析
+  -> 证据校验
+  -> 最终综合
 ```
 
-Example:
+示例：
 
 ```text
-Player evidence:
-- Lotus defense first-death rate increased from 14% to 21%.
-- Four recent first deaths occurred before likely trade support.
+玩家证据：
+- Lotus 防守首死率从 14% 升到 21%。
+- 最近 4 次首死发生在可能无法换人的时机。
 
-Knowledge evidence:
-- Reviewed coaching sources recommend avoiding isolated early fights without support.
+知识证据：
+- 审核后的教练资料建议避免没有支援的早期孤立交火。
 
-Conclusion:
-- The observable evidence supports an early-fight timing hypothesis more strongly than a pure aim hypothesis.
+结论：
+- 当前证据更支持早期交火时机问题，而不是纯枪法问题。
 
-Limitation:
-- The Riot Match API does not provide complete movement, crosshair, or trajectory telemetry.
+限制：
+- Riot Match API 不提供完整移动、准星或弹道遥测。
 ```
 
-Knowledge provides context and hypotheses. It cannot prove that a player took a particular position or made a specific decision unless the player evidence contains that fact.
+知识只能提供背景和假设，不能证明玩家做过某个动作，除非玩家证据包含该事实。
 
-## 12. Knowledge Evaluation
+## 12. 知识评测
 
-The Eval suite must test:
+必须评测：
 
 ```text
-text fact retrieval
-map and patch filtering
-video timestamp citation
-image region citation
-table and numeric extraction
-conflicting sources
-stale patch handling
-insufficient evidence
-unsupported claim rejection
-prompt injection inside source content
+文本事实检索
+地图和补丁过滤
+视频时间戳引用
+图片区域引用
+表格和数值抽取
+来源冲突
+过期补丁处理
+证据不足
+无依据声明拒绝
+来源内容中的 Prompt Injection
 ```
 
-Metrics:
+指标：
 
 ```text
 retrieval recall@k
 retrieval precision@k
-citation validity
-source grounding
-patch correctness
-unsupported-claim rate
-answer usefulness
-latency
-embedding and rerank cost
+引用有效性
+来源支撑度
+补丁正确性
+无依据声明比例
+答案有用性
+延迟
+Embedding 和重排成本
 ```
 
-LLM-as-Judge is insufficient for numeric, patch, and tactical correctness. Include human-reviewed golden cases.
+数值、补丁和战术正确性不能只依靠 LLM Judge，必须包含领域人工审核的黄金用例。
 
-## 13. Initial Vertical Slice
+## 13. 初始垂直切片
 
-Start with:
+先做小范围：
 
 ```text
-one map: Lotus
-three topics: first death, defense, aim
-5-10 permitted videos
-10 reviewed images or diagrams
-100-300 approved chunks
-20 knowledge Eval cases
-PostgreSQL full-text search
-optional pgvector after baseline evaluation
+一个地图：Lotus
+三个主题：首死、防守、枪法
+5-10 个获准视频
+10 张审核后的图片或示意图
+100-300 个审核通过的知识块
+20 条知识库 Eval
+PostgreSQL 全文检索
+在基线评测后再考虑 pgvector
 Knowledge MCP Server
 ```
 
-Acceptance questions:
+验收问题：能否检索正确视频时间段、区分官方事实和社区建议、拒绝过期补丁、引用图片区域、结合玩家指标而不编造行为，并支持人工批准/修改/驳回和 fixture 回放。
 
-- Can the system retrieve the correct video timestamp?
-- Can it distinguish official fact from community advice?
-- Can it reject an obsolete patch claim?
-- Can it cite an image region?
-- Can it combine player metrics with general knowledge without inventing a player action?
-- Can a reviewer approve, revise, or reject a candidate?
-- Can ingestion and retrieval be replayed from fixtures?
+## 14. 交付顺序
 
-## 14. Delivery Order
+1. 定义来源清单、版权和信任字段。
+2. 增加来源和资源表迁移。
+3. 实现 RabbitMQ 入库任务。
+4. 增加 FFmpeg 音频和关键帧适配器。
+5. 增加转录和 OCR 适配器。
+6. 增加版本化抽取和审核 Prompt。
+7. 建立人工审核队列。
+8. 保存带来源位置的审核知识块。
+9. 实现关键词检索。
+10. 运行检索和 grounding 基线评测。
+11. 只有评测证明需要时才加入 Embedding 和 pgvector。
+12. 实现重排和证据包。
+13. 暴露 Knowledge MCP。
+14. 接入 Supervisor 和专家 Agent。
 
-1. Define source manifest, rights, and trust fields.
-2. Add source and asset migrations.
-3. Implement a RabbitMQ ingestion job.
-4. Add FFmpeg audio and frame extraction adapters.
-5. Add transcript and OCR adapters.
-6. Add versioned extraction and review prompts.
-7. Build the human review queue.
-8. Store approved chunks with source locations.
-9. Implement keyword retrieval.
-10. Run baseline retrieval and grounding Evals.
-11. Add embeddings and pgvector only if justified.
-12. Implement reranking and evidence packs.
-13. Expose Knowledge MCP.
-14. Connect Supervisor and specialist agents.
+## 15. 完成标准
 
-## 15. Completion Criteria
-
-The knowledge base is ready for product integration when it can ingest a permitted video or image, preserve source metadata, produce timestamped or page-linked candidates, require review before indexing, retrieve with map and patch filters, return inspectable evidence, separate generated descriptions from source facts, combine knowledge with player metrics, reject unsupported or stale claims, and replay ingestion and retrieval using fixtures.
+知识库能够接收获准的视频或图片，保留来源元数据，生成带时间戳或页码的候选知识块，入库前要求审核，支持地图和补丁过滤检索，返回可查看证据，区分生成描述和来源事实，结合玩家指标，拒绝无依据或过期结论，并能用 fixture 回放入库和检索流程。
