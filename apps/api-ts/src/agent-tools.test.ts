@@ -27,8 +27,13 @@ describe("analysis tools", () => {
       confidence: "low", recommendations: [], limitations: ["Small sample."]
     })).toThrow();
     expect(analysisAnswerSchema.parse({
-      conclusion: "Review the opening duels.", evidence: [{ claim: "Round one ended in a first death.", matchId: "match-1", roundNumber: 1 }],
-      confidence: "low", recommendations: [{ action: "Review the round.", rationale: "It contains the cited first death." }], limitations: ["Small sample."]
+      conclusion: "Review the opening duels.",
+      playerEvidence: [{ claim: "Round one ended in a first death.", matchId: "match-1", roundNumber: 1 }],
+      knowledgeEvidence: [],
+      confidence: "low",
+      recommendations: [{ action: "Review the round.", rationale: "It contains the cited first death." }],
+      limitations: ["Small sample."],
+      nextQuestions: []
     }).confidence).toBe("low");
   });
 });

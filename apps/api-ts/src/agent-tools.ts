@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { AnalyticsReader, MatchList, PlayerSummary, RoundEvidenceResult } from "./analytics-reader.js";
-
-export type AuthenticatedUser = { userId: string };
+import { analysisAnswerSchema, type AuthenticatedUser } from "./agent-contracts.js";
+export { analysisAnswerSchema } from "./agent-contracts.js";
 
 export type AnalyticsTool<Input, Output> = {
   name: string;
@@ -17,23 +17,7 @@ const roundEvidenceInputSchema = z.object({
   roundNumber: z.number().int().min(1)
 }).strict();
 
-export const analysisAnswerSchema = z.object({
-  conclusion: z.string().min(1),
-  evidence: z.array(z.object({
-    claim: z.string().min(1),
-    metricName: z.string().min(1).optional(),
-    matchId: z.string().min(1).optional(),
-    roundNumber: z.number().int().min(1).optional()
-  }).strict().refine(
-    (citation) => Boolean(citation.metricName) || Boolean(citation.matchId && citation.roundNumber),
-    "Each claim must cite a metric or a specific match round."
-  )),
-  confidence: z.enum(["low", "medium", "high"]),
-  recommendations: z.array(z.object({ action: z.string().min(1), rationale: z.string().min(1) }).strict()),
-  limitations: z.array(z.string().min(1))
-}).strict();
-
-export type AnalysisAnswer = z.infer<typeof analysisAnswerSchema>;
+export type { AnalysisAnswer } from "./agent-contracts.js";
 
 export function createAnalyticsTools(
   user: AuthenticatedUser,
