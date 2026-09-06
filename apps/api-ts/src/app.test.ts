@@ -1,0 +1,60 @@
+import { describe, expect, it } from "vitest";
+import { buildApp } from "./app.js";
+
+const expiresAt = new Date("2030-01-01T00:00:00.000Z");
+const inertDependencies = { pool: { end: async () => undefined } as never, redis: { quit: async () => "OK" } as never };
+
+describe("Riot RSO routes", () => {
+  it("starts RSO with an HttpOnly product session cookie", async () => {
+    const calls: string[] = [];
+    const app = buildApp({
+      ...inertDependencies,
+      oauth: {
+        getOrCreateSession: async () => ({ session: { userId: "user-1", token: "session-token", expiresAt }, created: true }),
+        begin: async (userId: string) => { calls.push(userId); return "https://rso.example.test/authorize?state=opaque"; }
+      } as never
+    });
+
+    const response = await app.inject({ method: "GET", url: "/auth/riot/start" });
+    expect(response.statusCode).toBe(302);
+    expect(response.headers.location).toBe("https://rso.example.test/authorize?state=opaque");
+    expect(response.headers["set-cookie"]).toContain("valorant_session=session-token");
+    expect(response.headers["set-cookie"]).toContain("HttpOnly");
+    expect(calls).toEqual(["user-1"]);
+    await app.close();
+  });
+
+  it("requires the initiating product session before completing or disconnecting", async () => {
+    const app = buildApp({
+      ...inertDependencies,
+      oauth: { getSession: async () => null } as never
+    });
+
+    const callback = await app.inject({ method: "GET", url: "/auth/riot/callback?state=opaque&code=secret-code" });
+    const disconnect = await app.inject({ method: "POST", url: "/auth/riot/disconnect" });
+    expect(callback.statusCode).toBe(401);
+    expect(disconnect.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it("binds the callback and disconnect action to the current session user", async () => {
+    const completions: unknown[][] = [];
+    const disconnected: string[] = [];
+    const app = buildApp({
+      ...inertDependencies,
+      oauth: {
+        getSession: async () => ({ userId: "user-1", token: "session-token", expiresAt }),
+        complete: async (...args: unknown[]) => { completions.push(args); return { userId: "user-1", puuid: "player-puuid" }; },
+        disconnect: async (userId: string) => { disconnected.push(userId); }
+      } as never
+    });
+
+    const callback = await app.inject({ method: "GET", url: "/auth/riot/callback?state=opaque&code=secret-code", headers: { cookie: "valorant_session=session-token" } });
+    const disconnect = await app.inject({ method: "POST", url: "/auth/riot/disconnect", headers: { cookie: "valorant_session=session-token" } });
+    expect(callback.statusCode).toBe(302);
+    expect(completions).toEqual([[{ state: "opaque", code: "secret-code" }, "user-1"]]);
+    expect(disconnect.statusCode).toBe(204);
+    expect(disconnected).toEqual(["user-1"]);
+    await app.close();
+  });
+});

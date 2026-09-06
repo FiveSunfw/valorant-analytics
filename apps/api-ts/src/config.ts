@@ -4,3 +4,14 @@ loadLocalEnv();
 
 export const databaseUrl = process.env.DATABASE_URL ?? "postgresql://valorant:valorant_dev@127.0.0.1:15432/valorant";
 export const redisUrl = process.env.REDIS_URL ?? "redis://127.0.0.1:16379/0";
+export const riotClientId = process.env.RIOT_CLIENT_ID ?? "";
+export const riotClientSecret = process.env.RIOT_CLIENT_SECRET ?? "";
+export const riotRedirectUri = process.env.RIOT_REDIRECT_URI ?? "http://localhost:8000/auth/riot/callback";
+export const riotRsoAuthorizeUrl = process.env.RIOT_RSO_AUTHORIZE_URL ?? "";
+export const riotRsoTokenUrl = process.env.RIOT_RSO_TOKEN_URL ?? "";
+export const riotRsoUserinfoUrl = process.env.RIOT_RSO_USERINFO_URL ?? "";
+export const riotAccountRegion = process.env.RIOT_ACCOUNT_REGION ?? "asia";
+export const riotRsoScopes = process.env.RIOT_RSO_SCOPES ?? "openid";
+export const tokenEncryptionKey = process.env.TOKEN_ENCRYPTION_KEY ?? "";
+export const riotPostAuthRedirectUrl = process.env.RIOT_POST_AUTH_REDIRECT_URL ?? "http://localhost:3001/?riot=connected";
+export const riotPlatform = process.env.RIOT_PLATFORM ?? "ap";

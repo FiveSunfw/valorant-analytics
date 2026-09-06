@@ -27,6 +27,12 @@ const migrations = [{
     "CREATE INDEX IF NOT EXISTS ix_user_sessions_user_id ON user_sessions (user_id)",
     "CREATE INDEX IF NOT EXISTS ix_user_sessions_expires_at ON user_sessions (expires_at)"
   ]
+}, {
+  id: "20260906_0004",
+  statements: [
+    "ALTER TABLE riot_oauth_states ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE",
+    "CREATE INDEX IF NOT EXISTS ix_riot_oauth_states_user_id ON riot_oauth_states (user_id)"
+  ]
 }];
 
 export async function migrate(pool: SqlExecutor): Promise<void> {
