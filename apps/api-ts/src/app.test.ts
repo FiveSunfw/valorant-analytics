@@ -68,6 +68,7 @@ describe("Riot RSO routes", () => {
       analyticsReader: {
         getPlayerSummary: async (userId: string) => { calls.push(userId); return { scope: { queue: "competitive", sampleSize: 0 }, metrics: null }; },
         getMatchList: async () => ({ scope: { queue: "competitive", sampleSize: 0 }, matches: [] }),
+        findRoundEvidence: async () => ({ scope: { queue: "competitive", sampleSize: 0 }, evidence: [] }),
         getRoundEvidence: async () => ({ scope: { queue: "competitive", sampleSize: 0 }, evidence: [] })
       } as never
     });

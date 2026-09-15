@@ -16,13 +16,22 @@ const roundEvidenceInputSchema = z.object({
   matchId: z.string().min(1),
   roundNumber: z.number().int().min(1)
 }).strict();
+const findRoundEvidenceInputSchema = z.object({
+  eventType: z.literal("first_death"),
+  limit: z.number().int().min(1).max(10).default(5)
+}).strict();
 
 export type { AnalysisAnswer } from "./agent-contracts.js";
 
 export function createAnalyticsTools(
   user: AuthenticatedUser,
-  reader: Pick<AnalyticsReader, "getPlayerSummary" | "getMatchList" | "getRoundEvidence">
-): readonly [AnalyticsTool<Record<string, never>, PlayerSummary>, AnalyticsTool<{ limit: number }, MatchList>, AnalyticsTool<{ matchId: string; roundNumber: number }, RoundEvidenceResult>] {
+  reader: Pick<AnalyticsReader, "getPlayerSummary" | "getMatchList" | "getRoundEvidence" | "findRoundEvidence">
+): readonly [
+  AnalyticsTool<Record<string, never>, PlayerSummary>,
+  AnalyticsTool<{ limit: number }, MatchList>,
+  AnalyticsTool<{ eventType: "first_death"; limit: number }, RoundEvidenceResult>,
+  AnalyticsTool<{ matchId: string; roundNumber: number }, RoundEvidenceResult>
+] {
   return [
     {
       name: "get_player_summary",
@@ -34,13 +43,19 @@ export function createAnalyticsTools(
       name: "get_match_list",
       description: "List up to ten recent completed competitive matches for the authenticated player.",
       inputSchema: matchListInputSchema,
-      execute: ({ limit }) => reader.getMatchList(user.userId, limit)
+      execute: ({ limit }: { limit: number }) => reader.getMatchList(user.userId, limit)
+    },
+    {
+      name: "find_round_evidence",
+      description: "Find recent evidence-backed rounds for the authenticated player by supported event type.",
+      inputSchema: findRoundEvidenceInputSchema,
+      execute: ({ eventType, limit }: { eventType: "first_death"; limit: number }) => reader.findRoundEvidence(user.userId, eventType, limit)
     },
     {
       name: "get_round_evidence",
       description: "Read concrete events for one completed competitive match round owned by the authenticated player.",
       inputSchema: roundEvidenceInputSchema,
-      execute: ({ matchId, roundNumber }) => reader.getRoundEvidence(user.userId, matchId, roundNumber)
+      execute: ({ matchId, roundNumber }: { matchId: string; roundNumber: number }) => reader.getRoundEvidence(user.userId, matchId, roundNumber)
     }
   ];
 }

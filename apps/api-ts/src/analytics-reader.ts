@@ -72,6 +72,27 @@ export class AnalyticsReader {
     return { scope: makeScope(evidence.length ? 1 : 0, null, null), evidence };
   }
 
+  async findRoundEvidence(userId: string, eventType: "first_death", limit: number): Promise<RoundEvidenceResult> {
+    const result = await this.pool.query<{
+      match_id: string; round_number: number; is_killer: boolean; is_victim: boolean; is_assistant: boolean;
+      is_first_death: boolean; round_time_millis: number | null; finishing_item: string | null;
+    }>(
+      `SELECT kills.match_id, kills.round_number, kills.is_killer, kills.is_victim, kills.is_assistant,
+        kills.is_first_death, kills.round_time_millis, kills.finishing_item
+       FROM riot_accounts accounts
+       JOIN player_match_stats stats ON stats.riot_account_id = accounts.id
+       JOIN matches ON matches.match_id = stats.match_id
+       JOIN round_kills kills ON kills.match_id = stats.match_id AND kills.riot_account_id = accounts.id
+       WHERE accounts.user_id = $1 AND matches.queue_id = $2 AND matches.is_ranked = TRUE
+         AND matches.is_completed = TRUE AND kills.is_first_death = ($3 = 'first_death')
+       ORDER BY matches.game_start_millis DESC NULLS LAST, kills.round_number DESC
+       LIMIT $4`,
+      [userId, COMPETITIVE_QUEUE_ID, eventType, limit]
+    );
+    const evidence = result.rows.map((row) => toEvidence(row.match_id, row.round_number, row));
+    return { scope: makeScope(evidence.length, null, null), evidence };
+  }
+
   async getMatchList(userId: string, limit: number): Promise<MatchList> {
     const result = await this.pool.query<{
       match_id: string; map_id: string | null; game_start_millis: string | null; team_id: string | null;
