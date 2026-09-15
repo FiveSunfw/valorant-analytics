@@ -11,6 +11,7 @@ describe("migrate", () => {
     await migrate(pool);
     expect(calls[0]).toContain("schema_migrations");
     expect(calls.some((sql) => sql.includes("round_kills"))).toBe(true);
+    expect(calls.some((sql) => sql.includes("agent_runs"))).toBe(true);
     expect(calls.at(-1)).toContain("INSERT INTO schema_migrations");
   });
 });

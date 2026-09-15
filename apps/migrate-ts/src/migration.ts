@@ -33,6 +33,25 @@ const migrations = [{
     "ALTER TABLE riot_oauth_states ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE",
     "CREATE INDEX IF NOT EXISTS ix_riot_oauth_states_user_id ON riot_oauth_states (user_id)"
   ]
+}, {
+  id: "20260915_0005",
+  statements: [
+    `CREATE TABLE IF NOT EXISTS agent_runs (
+      run_id UUID PRIMARY KEY,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      question TEXT NOT NULL,
+      prompt_id VARCHAR(128) NOT NULL,
+      prompt_version VARCHAR(32) NOT NULL,
+      prompt_hash VARCHAR(64) NOT NULL,
+      model_provider VARCHAR(128) NOT NULL,
+      tool_calls JSONB NOT NULL DEFAULT '[]'::jsonb,
+      answer JSONB NOT NULL,
+      status VARCHAR(32) NOT NULL,
+      latency_ms INTEGER NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )`,
+    "CREATE INDEX IF NOT EXISTS ix_agent_runs_user_created_at ON agent_runs (user_id, created_at DESC)"
+  ]
 }];
 
 export async function migrate(pool: SqlExecutor): Promise<void> {
