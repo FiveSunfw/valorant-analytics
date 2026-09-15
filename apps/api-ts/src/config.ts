@@ -15,3 +15,6 @@ export const riotRsoScopes = process.env.RIOT_RSO_SCOPES ?? "openid";
 export const tokenEncryptionKey = process.env.TOKEN_ENCRYPTION_KEY ?? "";
 export const riotPostAuthRedirectUrl = process.env.RIOT_POST_AUTH_REDIRECT_URL ?? "http://localhost:3001/?riot=connected";
 export const riotPlatform = process.env.RIOT_PLATFORM ?? "ap";
+export const analysisModelApiKey = process.env.DEEPSEEK_API_KEY ?? "";
+export const analysisModelBaseUrl = process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com/v1";
+export const analysisModelName = process.env.DEEPSEEK_MODEL ?? "deepseek-chat";

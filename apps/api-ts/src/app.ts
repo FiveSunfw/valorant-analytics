@@ -18,7 +18,8 @@ import {
 } from "./config.js";
 import { PostgresRiotOAuthStore, RiotOAuthError, RiotOAuthService } from "./riot-oauth.js";
 import { AnalyticsReader } from "./analytics-reader.js";
-import { AgentRunError, createDefaultAnalysis } from "./agent-runtime.js";
+import { AgentRunError, createDefaultAnalysis, type AgentModel } from "./agent-runtime.js";
+import { createAgentModelFromEnvironment } from "./openai-compatible-model.js";
 
 const SESSION_COOKIE = "valorant_session";
 
@@ -27,6 +28,7 @@ type RuntimeDependencies = {
   redis: Redis;
   oauth?: RiotOAuthService;
   analyticsReader?: AnalyticsReader;
+  agentModel?: AgentModel;
 };
 
 function readCookie(header: string | undefined, name: string): string | undefined {
@@ -67,6 +69,7 @@ export function buildApp(dependencies: RuntimeDependencies = {
     encryptionKey: tokenEncryptionKey
   }, new PostgresRiotOAuthStore(dependencies.pool));
   const analyticsReader = dependencies.analyticsReader ?? new AnalyticsReader(dependencies.pool);
+  const agentModel = dependencies.agentModel ?? createAgentModelFromEnvironment();
 
   app.get("/health", async () => {
     await dependencies.pool.query("SELECT 1");
@@ -99,7 +102,7 @@ export function buildApp(dependencies: RuntimeDependencies = {
     const body = request.body as { question?: unknown } | undefined;
     if (typeof body?.question !== "string") throw new AgentRunError("invalid_input", "question must be a string");
     const result = await createDefaultAnalysis({
-      user: { userId: session.userId }, question: body.question, reader: analyticsReader
+      user: { userId: session.userId }, question: body.question, reader: analyticsReader, model: agentModel
     });
     return reply.send(result);
   });

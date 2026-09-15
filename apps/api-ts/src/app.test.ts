@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildApp } from "./app.js";
+import { DeterministicAnalysisModel } from "./agent-runtime.js";
 
 const expiresAt = new Date("2030-01-01T00:00:00.000Z");
 const inertDependencies = { pool: { end: async () => undefined } as never, redis: { quit: async () => "OK" } as never };
@@ -70,7 +71,8 @@ describe("Riot RSO routes", () => {
         getMatchList: async () => ({ scope: { queue: "competitive", sampleSize: 0 }, matches: [] }),
         findRoundEvidence: async () => ({ scope: { queue: "competitive", sampleSize: 0 }, evidence: [] }),
         getRoundEvidence: async () => ({ scope: { queue: "competitive", sampleSize: 0 }, evidence: [] })
-      } as never
+      } as never,
+      agentModel: new DeterministicAnalysisModel()
     });
     const response = await app.inject({ method: "POST", url: "/agent/analyze", headers: { cookie: "valorant_session=session-token" }, payload: { question: "Why am I losing?" } });
     expect(response.statusCode).toBe(200);

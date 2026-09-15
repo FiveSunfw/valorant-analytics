@@ -72,6 +72,7 @@ export async function runAnalysis(options: AgentRunOptions): Promise<AgentRunRes
   const question = options.question.trim();
   if (!question) throw new AgentRunError("invalid_input", "A question is required");
   const prompt = promptRegistry.get("agent.supervisor.system");
+  const sharedPolicy = promptRegistry.get("agent.shared.policy");
   if (unsupportedQuestion(question)) {
     return {
       runId: options.runId ?? randomUUID(), prompt, toolCalls: 0,
@@ -95,8 +96,8 @@ export async function runAnalysis(options: AgentRunOptions): Promise<AgentRunRes
     let decision: AgentModelDecision;
     try {
       decision = await options.model.respond({
-        runId, userMessage: question, systemPrompt: prompt.template,
-        tools: options.tools.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })), observations
+        runId, userMessage: question, systemPrompt: `${sharedPolicy.template}\n${prompt.template}`,
+        tools: options.tools.map(({ name, description, modelSchema }) => ({ name, description, inputSchema: modelSchema })), observations
       });
     } catch (error) {
       throw new AgentRunError("model_failed", error instanceof Error ? error.message : "Model request failed");
@@ -163,6 +164,6 @@ export class DeterministicAnalysisModel implements AgentModel {
   }
 }
 
-export function createDefaultAnalysis(options: Omit<AgentRunOptions, "tools" | "model"> & { reader: Parameters<typeof createAnalyticsTools>[1] }): Promise<AgentRunResult> {
-  return runAnalysis({ ...options, tools: createAnalyticsTools(options.user, options.reader), model: new DeterministicAnalysisModel() });
+export function createDefaultAnalysis(options: Omit<AgentRunOptions, "tools" | "model"> & { reader: Parameters<typeof createAnalyticsTools>[1]; model?: AgentModel }): Promise<AgentRunResult> {
+  return runAnalysis({ ...options, tools: createAnalyticsTools(options.user, options.reader), model: options.model ?? new DeterministicAnalysisModel() });
 }

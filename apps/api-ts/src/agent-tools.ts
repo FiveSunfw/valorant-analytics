@@ -7,6 +7,7 @@ export type AnalyticsTool<Input, Output> = {
   name: string;
   description: string;
   inputSchema: z.ZodType<Input, z.ZodTypeDef, unknown>;
+  modelSchema: Record<string, unknown>;
   execute(input: Input): Promise<Output>;
 };
 
@@ -37,24 +38,38 @@ export function createAnalyticsTools(
       name: "get_player_summary",
       description: "Read deterministic metrics from the authenticated player's completed competitive matches.",
       inputSchema: emptyInputSchema,
+      modelSchema: { type: "object", properties: {}, additionalProperties: false },
       execute: () => reader.getPlayerSummary(user.userId)
     },
     {
       name: "get_match_list",
       description: "List up to ten recent completed competitive matches for the authenticated player.",
       inputSchema: matchListInputSchema,
+      modelSchema: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 10 } }, additionalProperties: false },
       execute: ({ limit }: { limit: number }) => reader.getMatchList(user.userId, limit)
     },
     {
       name: "find_round_evidence",
       description: "Find recent evidence-backed rounds for the authenticated player by supported event type.",
       inputSchema: findRoundEvidenceInputSchema,
+      modelSchema: {
+        type: "object",
+        properties: { eventType: { type: "string", enum: ["first_death"] }, limit: { type: "integer", minimum: 1, maximum: 10 } },
+        required: ["eventType"],
+        additionalProperties: false
+      },
       execute: ({ eventType, limit }: { eventType: "first_death"; limit: number }) => reader.findRoundEvidence(user.userId, eventType, limit)
     },
     {
       name: "get_round_evidence",
       description: "Read concrete events for one completed competitive match round owned by the authenticated player.",
       inputSchema: roundEvidenceInputSchema,
+      modelSchema: {
+        type: "object",
+        properties: { matchId: { type: "string", minLength: 1 }, roundNumber: { type: "integer", minimum: 1 } },
+        required: ["matchId", "roundNumber"],
+        additionalProperties: false
+      },
       execute: ({ matchId, roundNumber }: { matchId: string; roundNumber: number }) => reader.getRoundEvidence(user.userId, matchId, roundNumber)
     }
   ];

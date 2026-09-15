@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { Pool } from "pg";
 import { buildApp } from "./app.js";
+import { DeterministicAnalysisModel } from "./agent-runtime.js";
 
 const describeIntegration = process.env.RUN_INTEGRATION_TESTS === "1" ? describe : describe.skip;
 const databaseUrl = process.env.DATABASE_URL ?? "postgresql://valorant:valorant_dev@127.0.0.1:15432/valorant";
@@ -15,7 +16,8 @@ describeIntegration("fixture analysis agent", () => {
     const app = buildApp({
       pool,
       redis: { quit: async () => "OK" } as never,
-      oauth: { getSession: async () => ({ userId, token: "demo-session", expiresAt: new Date(Date.now() + 60_000) }) } as never
+      oauth: { getSession: async () => ({ userId, token: "demo-session", expiresAt: new Date(Date.now() + 60_000) }) } as never,
+      agentModel: new DeterministicAnalysisModel()
     });
 
     try {
