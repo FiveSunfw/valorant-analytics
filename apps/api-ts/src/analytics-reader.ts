@@ -17,6 +17,8 @@ export type MatchDetailResult = {
   scope: AnalyticsScope;
   match: (MatchSummary & { roundsWon: number; roundsLost: number; kills: number; deaths: number; assists: number; metrics: PlayerMetrics }) | null;
 };
+export type SidePerformance = { roundsPlayed: number; roundsWon: number; winRate: number };
+export type AttackDefenseResult = { scope: AnalyticsScope; attack: SidePerformance; defense: SidePerformance };
 export type RoundEvidenceResult = { scope: AnalyticsScope; evidence: RoundEvidence[] };
 
 export class AnalyticsReader {
@@ -181,6 +183,53 @@ export class AnalyticsReader {
       }
     };
   }
+
+  async compareAttackDefense(userId: string): Promise<AttackDefenseResult> {
+    const result = await this.pool.query<{
+      match_count: string; period_start: string | null; period_end: string | null;
+      attack_played: string; attack_won: string; defense_played: string; defense_won: string;
+    }>(
+      `WITH classified AS (
+        SELECT matches.match_id, matches.game_start_millis,
+          rounds.winning_team = stats.team_id AS won,
+          CASE
+            WHEN rounds.winning_team = stats.team_id THEN rounds.winning_team_role
+            WHEN rounds.winning_team_role = 'Attack' THEN 'Defense'
+            WHEN rounds.winning_team_role = 'Defense' THEN 'Attack'
+          END AS player_role
+        FROM riot_accounts accounts
+        JOIN player_match_stats stats ON stats.riot_account_id = accounts.id
+        JOIN matches ON matches.match_id = stats.match_id
+        JOIN match_rounds rounds ON rounds.match_id = matches.match_id
+        WHERE accounts.user_id = $1 AND matches.queue_id = $2
+          AND matches.is_ranked = TRUE AND matches.is_completed = TRUE
+      )
+      SELECT COUNT(DISTINCT match_id) AS match_count, MIN(game_start_millis) AS period_start,
+        MAX(game_start_millis) AS period_end,
+        COUNT(*) FILTER (WHERE player_role = 'Attack') AS attack_played,
+        COUNT(*) FILTER (WHERE player_role = 'Attack' AND won) AS attack_won,
+        COUNT(*) FILTER (WHERE player_role = 'Defense') AS defense_played,
+        COUNT(*) FILTER (WHERE player_role = 'Defense' AND won) AS defense_won
+      FROM classified`,
+      [userId, COMPETITIVE_QUEUE_ID]
+    );
+    const row = result.rows[0];
+    const attackPlayed = Number(row.attack_played);
+    const attackWon = Number(row.attack_won);
+    const defensePlayed = Number(row.defense_played);
+    const defenseWon = Number(row.defense_won);
+    const scope = makeScope(Number(row.match_count), row.period_start, row.period_end);
+    if (attackPlayed + defensePlayed === 0 && scope.sampleSize > 0) scope.limitation = "Round side metadata is unavailable for this sample.";
+    return {
+      scope,
+      attack: { roundsPlayed: attackPlayed, roundsWon: attackWon, winRate: percentage(attackWon, attackPlayed) },
+      defense: { roundsPlayed: defensePlayed, roundsWon: defenseWon, winRate: percentage(defenseWon, defensePlayed) }
+    };
+  }
+}
+
+function percentage(won: number, played: number): number {
+  return played ? Math.round(won / played * 10_000) / 100 : 0;
 }
 
 function makeScope(sampleSize: number, periodStart: string | null, periodEnd: string | null): AnalyticsScope {

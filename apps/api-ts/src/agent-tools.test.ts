@@ -8,6 +8,7 @@ describe("analysis tools", () => {
       getPlayerSummary: async (...args: unknown[]) => { calls.push(args); return { scope: { queue: "competitive" as const, sampleSize: 0 }, metrics: null }; },
       getMatchList: async (...args: unknown[]) => { calls.push(args); return { scope: { queue: "competitive" as const, sampleSize: 0 }, matches: [] }; },
       getMatchDetail: async (...args: unknown[]) => { calls.push(args); return { scope: { queue: "competitive" as const, sampleSize: 0 }, match: null }; },
+      compareAttackDefense: async (...args: unknown[]) => { calls.push(args); return { scope: { queue: "competitive" as const, sampleSize: 0 }, attack: { roundsPlayed: 0, roundsWon: 0, winRate: 0 }, defense: { roundsPlayed: 0, roundsWon: 0, winRate: 0 } }; },
       findRoundEvidence: async (...args: unknown[]) => { calls.push(args); return { scope: { queue: "competitive" as const, sampleSize: 0 }, evidence: [] }; },
       getRoundEvidence: async (...args: unknown[]) => { calls.push(args); return { scope: { queue: "competitive" as const, sampleSize: 0 }, evidence: [] }; }
     };
@@ -15,12 +16,14 @@ describe("analysis tools", () => {
     await tools[0].execute({});
     await tools[1].execute({ limit: 5 });
     await tools[2].execute({ matchId: "match-1" });
-    await tools[3].execute({ eventType: "first_death", limit: 2 });
-    await tools[4].execute({ matchId: "match-1", roundNumber: 1 });
+    await tools[3].execute({});
+    await tools[4].execute({ eventType: "first_death", limit: 2 });
+    await tools[5].execute({ matchId: "match-1", roundNumber: 1 });
     expect(calls).toEqual([
       ["a28f4545-1443-4e7b-b456-1d1c1e65f9c0"],
       ["a28f4545-1443-4e7b-b456-1d1c1e65f9c0", 5],
       ["a28f4545-1443-4e7b-b456-1d1c1e65f9c0", "match-1"],
+      ["a28f4545-1443-4e7b-b456-1d1c1e65f9c0"],
       ["a28f4545-1443-4e7b-b456-1d1c1e65f9c0", "first_death", 2],
       ["a28f4545-1443-4e7b-b456-1d1c1e65f9c0", "match-1", 1]
     ]);

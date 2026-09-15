@@ -25,7 +25,7 @@ describeIntegration("AnalyticsReader against PostgreSQL", () => {
     await pool.query("INSERT INTO matches (match_id,map_id,game_start_millis,queue_id,is_ranked,is_completed,raw_payload) VALUES ($1,'Ascent',1700000000000,'competitive',TRUE,TRUE,'{}'::jsonb)", [matchId]);
     await pool.query("INSERT INTO player_match_stats (match_id,riot_account_id,team_id,score,rounds_played,kills,deaths) VALUES ($1,$2,'Blue',600,3,2,1)", [matchId, accountId]);
     for (const round of [1, 2, 3]) {
-      await pool.query("INSERT INTO match_rounds (match_id,round_number,winning_team) VALUES ($1,$2,$3)", [matchId, round, round === 2 ? "Red" : "Blue"]);
+      await pool.query("INSERT INTO match_rounds (match_id,round_number,winning_team,winning_team_role) VALUES ($1,$2,$3,$4)", [matchId, round, round === 2 ? "Red" : "Blue", round === 1 ? "Attack" : round === 2 ? "Defense" : "Defense"]);
       await pool.query("INSERT INTO player_round_stats (match_id,riot_account_id,round_number,score) VALUES ($1,$2,$3,200)", [matchId, accountId, round]);
       await pool.query("INSERT INTO round_damage (match_id,riot_account_id,round_number,damage_index,damage,headshots,bodyshots,legshots) VALUES ($1,$2,$3,0,$4,$5,$6,0)", [matchId, accountId, round, round === 1 ? 100 : 50, round === 1 || round === 3 ? 1 : 0, round === 1 || round === 2 ? 1 : 0]);
     }
@@ -36,6 +36,7 @@ describeIntegration("AnalyticsReader against PostgreSQL", () => {
     expect(await reader.getMatchList(userId, 5)).toMatchObject({ matches: [{ matchId, result: "win" }] });
     expect(await reader.getMatchDetail(userId, matchId)).toMatchObject({ match: { matchId, roundsWon: 2, roundsLost: 1, kills: 2, deaths: 1, metrics: { adr: 66.67 } } });
     expect((await reader.getMatchDetail(randomUUID(), matchId)).match).toBeNull();
+    expect(await reader.compareAttackDefense(userId)).toMatchObject({ attack: { roundsPlayed: 2, roundsWon: 1, winRate: 50 }, defense: { roundsPlayed: 1, roundsWon: 1, winRate: 100 } });
     expect(await reader.getRoundEvidence(userId, matchId, 1)).toMatchObject({ scope: { queue: "competitive", sampleSize: 1 }, evidence: [{ matchId, roundNumber: 1, eventType: "first_death" }] });
     expect(await reader.findRoundEvidence(userId, "first_death", 5)).toMatchObject({ evidence: [{ matchId, roundNumber: 1, eventType: "first_death" }] });
     expect((await reader.getRoundEvidence(randomUUID(), matchId, 1)).evidence).toEqual([]);

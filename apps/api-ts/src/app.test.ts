@@ -70,6 +70,7 @@ describe("Riot RSO routes", () => {
         getPlayerSummary: async (userId: string) => { calls.push(userId); return { scope: { queue: "competitive", sampleSize: 0 }, metrics: null }; },
         getMatchList: async () => ({ scope: { queue: "competitive", sampleSize: 0 }, matches: [] }),
         getMatchDetail: async () => ({ scope: { queue: "competitive", sampleSize: 0 }, match: null }),
+        compareAttackDefense: async () => ({ scope: { queue: "competitive", sampleSize: 0 }, attack: { roundsPlayed: 0, roundsWon: 0, winRate: 0 }, defense: { roundsPlayed: 0, roundsWon: 0, winRate: 0 } }),
         findRoundEvidence: async () => ({ scope: { queue: "competitive", sampleSize: 0 }, evidence: [] }),
         getRoundEvidence: async () => ({ scope: { queue: "competitive", sampleSize: 0 }, evidence: [] })
       } as never,
