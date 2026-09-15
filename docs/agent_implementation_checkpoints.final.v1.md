@@ -13,7 +13,7 @@
 | ID | 里程碑 | 权重 | 完成证据 |
 | --- | --- | ---: | --- |
 | C0 | TypeScript 契约和 Prompt Registry | 10% | Zod 契约、Registry 结构、契约测试 |
-| C1 | 持久化多轮会话状态 | 15% | 创建/恢复会话和范围变更测试 |
+| C1 | 持久化多轮会话状态和记忆读写闭环 | 15% | 创建/恢复会话、Core/Recall 读取、候选记忆写入、范围变更和删除测试 |
 | C2 | Supervisor 路由和受限 Agent Loop | 20% | 路由、最大步数、超时、拒答测试 |
 | C3 | Stats、Death、Aim 专家发现 | 15% | 三个专家的 fixture 证据契约测试 |
 | C4 | 首个端到端玩家分析 | 15% | “我最近为什么总是输？”返回经过验证的证据型答案 |
@@ -33,7 +33,7 @@ progress = 已完成检查点的权重之和
 
 ```text
 C0  TypeScript 契约和 Prompt Registry       契约完成；Registry 待完成
-C1  持久化多轮会话状态                       未开始
+C1  持久化多轮会话状态和记忆读写闭环           未开始
 C2  Supervisor 路由和受限 Loop               未开始
 C3  Stats / Death / Aim 专家                 未开始
 C4  首个端到端分析                           未开始
