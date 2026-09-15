@@ -140,14 +140,25 @@ export class DeterministicAnalysisModel implements AgentModel {
       recommendations: [{ action: "Play and sync more completed competitive matches", rationale: "The current data set has no usable player metrics." }],
       limitations: [data.scope?.limitation ?? "No completed competitive matches are available."], nextQuestions: ["Which recent match should we review after more data is synced?"]
     } };
+    const asksAboutFirstDeaths = /(先死|首死|first\s*death|opening\s*death)/i.test(request.userMessage);
+    const foundRounds = request.observations.find((observation) => observation.toolName === "find_round_evidence");
+    if (asksAboutFirstDeaths && !foundRounds) {
+      return { kind: "tool_call", toolName: "find_round_evidence", input: { eventType: "first_death", limit: 5 } };
+    }
     const firstDeathRate = metrics.firstDeathRate;
     const metricName = typeof firstDeathRate === "number" ? "first_death_rate" : "adr";
     const value = metrics[metricName === "first_death_rate" ? "firstDeathRate" : "adr"];
+    const rounds = (foundRounds?.result as { evidence?: { matchId: string; roundNumber: number }[] } | undefined)?.evidence ?? [];
+    const roundCitations = rounds.map((round) => ({
+      claim: "This round contains a recorded first-death event.",
+      matchId: round.matchId,
+      roundNumber: round.roundNumber
+    }));
     return { kind: "final", answer: {
       conclusion: `Your recent competitive sample has ${metricName.replaceAll("_", " ")} at ${value}. Use this as a review signal, not a diagnosis.`,
-      playerEvidence: [{ claim: `${metricName} is ${value}.`, metricName }], knowledgeEvidence: [], confidence: data.scope?.sampleSize && data.scope.sampleSize >= 5 ? "medium" : "low",
+      playerEvidence: [{ claim: `${metricName} is ${value}.`, metricName }, ...roundCitations], knowledgeEvidence: [], confidence: data.scope?.sampleSize && data.scope.sampleSize >= 5 ? "medium" : "low",
       recommendations: [{ action: "Review the rounds behind this metric", rationale: "A round-level review can separate repeatable patterns from a small-sample fluctuation." }],
-      limitations: [data.scope?.limitation ?? "Metrics are limited to completed competitive matches."], nextQuestions: ["Would you like to inspect a specific round or compare recent matches?"]
+      limitations: [data.scope?.limitation ?? "Metrics are limited to completed competitive matches.", ...(asksAboutFirstDeaths && rounds.length === 0 ? ["No concrete first-death rounds were found in the current sample."] : [])], nextQuestions: ["Would you like to inspect a specific round or compare recent matches?"]
     } };
   }
 }

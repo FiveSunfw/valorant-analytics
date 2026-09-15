@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createAnalyticsTools } from "./agent-tools.js";
-import { AgentRunError, runAnalysis, type AgentModel, type AgentModelRequest } from "./agent-runtime.js";
+import { AgentRunError, DeterministicAnalysisModel, runAnalysis, type AgentModel, type AgentModelRequest } from "./agent-runtime.js";
 
 const user = { userId: "user-1" };
 const reader = {
@@ -26,6 +26,15 @@ describe("minimal analysis agent", () => {
     ]) });
     expect(result.toolCalls).toBe(1);
     expect(result.prompt.hash).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("finds concrete first-death rounds for an opening-death question", async () => {
+    const result = await runAnalysis({ user, question: "我最近为什么总是先死？", tools: createAnalyticsTools(user, {
+      ...reader,
+      findRoundEvidence: async () => ({ scope: { queue: "competitive" as const, sampleSize: 1 }, evidence: [{ matchId: "match-1", roundNumber: 2, eventType: "first_death" as const, description: "First death" }] })
+    }), model: new DeterministicAnalysisModel() });
+    expect(result.toolCalls).toBe(2);
+    expect(result.answer.playerEvidence).toContainEqual(expect.objectContaining({ matchId: "match-1", roundNumber: 2 }));
   });
 
   it("rejects an unregistered tool before execution", async () => {
