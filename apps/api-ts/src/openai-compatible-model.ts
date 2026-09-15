@@ -27,7 +27,11 @@ export class OpenAICompatibleAgentModel implements AgentModel {
       messages: [
         {
           role: "system",
-          content: `${request.systemPrompt}\nWhen enough evidence is available, return only one JSON object with conclusion, playerEvidence, knowledgeEvidence, confidence, recommendations, limitations, and nextQuestions. Otherwise call one registered tool.`
+          content: `${request.systemPrompt}
+When enough evidence is available, return only one JSON object in this exact shape:
+{"conclusion":"string","playerEvidence":[{"claim":"string","metricName":"string"},{"claim":"string","matchId":"string","roundNumber":1}],"knowledgeEvidence":[],"confidence":"low|medium|high","recommendations":[{"action":"string","rationale":"string"}],"limitations":["string"],"nextQuestions":["string"]}.
+Each playerEvidence item must contain claim plus either metricName or both matchId and roundNumber. Do not rename fields or add fields. Otherwise call one registered tool.`
+          + "\nFor questions about first deaths, opening deaths, 首死, or 先死: call get_player_summary and find_round_evidence before returning the final JSON."
         },
         { role: "user", content: `Question: ${request.userMessage}\nTool observations: ${observations}` }
       ],
@@ -35,7 +39,8 @@ export class OpenAICompatibleAgentModel implements AgentModel {
         type: "function" as const,
         function: { name: tool.name, description: tool.description, parameters: tool.inputSchema as Record<string, unknown> }
       })),
-      tool_choice: "auto"
+      tool_choice: "auto",
+      response_format: { type: "json_object" }
     });
     const message = completion.choices[0]?.message;
     const toolCall = message?.tool_calls?.find((call) => call.type === "function");
@@ -47,7 +52,8 @@ export class OpenAICompatibleAgentModel implements AgentModel {
       };
     }
     if (!message?.content) throw new Error("Model returned neither a tool call nor a final answer");
-    return { kind: "final", answer: JSON.parse(message.content) as unknown };
+    const content = message.content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+    return { kind: "final", answer: JSON.parse(content) as unknown };
   }
 }
 

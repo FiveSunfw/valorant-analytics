@@ -126,7 +126,10 @@ export async function runAnalysis(options: AgentRunOptions): Promise<AgentRunRes
     }
     if (decision.kind === "final") {
       const parsed = analysisAnswerSchema.safeParse(decision.answer);
-      if (!parsed.success) throw new AgentRunError("invalid_output", "Model returned an invalid evidence-bound answer");
+      if (!parsed.success) {
+        const issues = parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ");
+        throw new AgentRunError("invalid_output", `Model returned an invalid evidence-bound answer: ${issues}`);
+      }
       return complete(parsed.data);
     }
     if (toolCalls >= maxToolCalls) throw new AgentRunError("budget_exceeded", "Tool-call budget exceeded");
