@@ -32,6 +32,8 @@ When enough evidence is available, return only one JSON object in this exact sha
 {"conclusion":"string","playerEvidence":[{"claim":"string","metricName":"string"},{"claim":"string","matchId":"string","roundNumber":1}],"knowledgeEvidence":[],"confidence":"low|medium|high","recommendations":[{"action":"string","rationale":"string"}],"limitations":["string"],"nextQuestions":["string"]}.
 Each playerEvidence item must contain claim plus either metricName or both matchId and roundNumber. Do not rename fields or add fields. Otherwise call one registered tool.`
           + "\nFor questions about first deaths, opening deaths, 首死, or 先死: call get_player_summary and find_round_evidence before returning the final JSON."
+          + "\nFor questions comparing attack and defense or 进攻 and 防守: call compare_attack_defense before returning the final JSON."
+          + "\nFor questions about map performance or 地图表现: call compare_map_performance before returning the final JSON."
         },
         { role: "user", content: `Question: ${request.userMessage}\nTool observations: ${observations}` }
       ],
