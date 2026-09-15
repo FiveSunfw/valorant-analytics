@@ -42,7 +42,7 @@ try {
     );
     for (let roundNumber = 1; roundNumber <= 12; roundNumber += 1) {
       const playerRole = roundNumber <= 6 ? "Attack" : "Defense";
-      const winningTeam = roundNumber <= 7 ? "Blue" : "Red";
+      const winningTeam = roundNumber <= (matchIndex % 2 === 0 ? 4 : 7) ? "Blue" : "Red";
       const winningTeamRole = winningTeam === "Blue" ? playerRole : playerRole === "Attack" ? "Defense" : "Attack";
       await client.query(
         "INSERT INTO match_rounds (match_id,round_number,winning_team,winning_team_role) VALUES ($1,$2,$3,$4) ON CONFLICT (match_id,round_number) DO UPDATE SET winning_team=EXCLUDED.winning_team, winning_team_role=EXCLUDED.winning_team_role",

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { AnalyticsReader, AttackDefenseResult, MatchDetailResult, MatchList, PlayerSummary, RoundEvidenceResult } from "./analytics-reader.js";
+import type { AnalyticsReader, AttackDefenseResult, MapPerformanceResult, MatchDetailResult, MatchList, PlayerSummary, RoundEvidenceResult } from "./analytics-reader.js";
 import { analysisAnswerSchema, type AuthenticatedUser } from "./agent-contracts.js";
 export { analysisAnswerSchema } from "./agent-contracts.js";
 
@@ -27,12 +27,13 @@ export type { AnalysisAnswer } from "./agent-contracts.js";
 
 export function createAnalyticsTools(
   user: AuthenticatedUser,
-  reader: Pick<AnalyticsReader, "getPlayerSummary" | "getMatchList" | "getMatchDetail" | "compareAttackDefense" | "getRoundEvidence" | "findRoundEvidence">
+  reader: Pick<AnalyticsReader, "getPlayerSummary" | "getMatchList" | "getMatchDetail" | "compareAttackDefense" | "compareMapPerformance" | "getRoundEvidence" | "findRoundEvidence">
 ): readonly [
   AnalyticsTool<Record<string, never>, PlayerSummary>,
   AnalyticsTool<{ limit: number }, MatchList>,
   AnalyticsTool<{ matchId: string }, MatchDetailResult>,
   AnalyticsTool<Record<string, never>, AttackDefenseResult>,
+  AnalyticsTool<Record<string, never>, MapPerformanceResult>,
   AnalyticsTool<{ eventType: "first_death"; limit: number }, RoundEvidenceResult>,
   AnalyticsTool<{ matchId: string; roundNumber: number }, RoundEvidenceResult>
 ] {
@@ -69,6 +70,13 @@ export function createAnalyticsTools(
       inputSchema: emptyInputSchema,
       modelSchema: { type: "object", properties: {}, additionalProperties: false },
       execute: () => reader.compareAttackDefense(user.userId)
+    },
+    {
+      name: "compare_map_performance",
+      description: "Compare win rate and deterministic combat metrics by map for the authenticated player's competitive matches.",
+      inputSchema: emptyInputSchema,
+      modelSchema: { type: "object", properties: {}, additionalProperties: false },
+      execute: () => reader.compareMapPerformance(user.userId)
     },
     {
       name: "find_round_evidence",

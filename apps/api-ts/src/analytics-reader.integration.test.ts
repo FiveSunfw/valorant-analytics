@@ -37,6 +37,7 @@ describeIntegration("AnalyticsReader against PostgreSQL", () => {
     expect(await reader.getMatchDetail(userId, matchId)).toMatchObject({ match: { matchId, roundsWon: 2, roundsLost: 1, kills: 2, deaths: 1, metrics: { adr: 66.67 } } });
     expect((await reader.getMatchDetail(randomUUID(), matchId)).match).toBeNull();
     expect(await reader.compareAttackDefense(userId)).toMatchObject({ attack: { roundsPlayed: 2, roundsWon: 1, winRate: 50 }, defense: { roundsPlayed: 1, roundsWon: 1, winRate: 100 } });
+    expect(await reader.compareMapPerformance(userId)).toMatchObject({ maps: [{ mapName: "Ascent", matches: 1, wins: 1, losses: 0, winRate: 100, kd: 2, adr: 66.67 }] });
     expect(await reader.getRoundEvidence(userId, matchId, 1)).toMatchObject({ scope: { queue: "competitive", sampleSize: 1 }, evidence: [{ matchId, roundNumber: 1, eventType: "first_death" }] });
     expect(await reader.findRoundEvidence(userId, "first_death", 5)).toMatchObject({ evidence: [{ matchId, roundNumber: 1, eventType: "first_death" }] });
     expect((await reader.getRoundEvidence(randomUUID(), matchId, 1)).evidence).toEqual([]);
