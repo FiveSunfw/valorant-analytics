@@ -17,6 +17,8 @@ import {
   tokenEncryptionKey
 } from "./config.js";
 import { PostgresRiotOAuthStore, RiotOAuthError, RiotOAuthService } from "./riot-oauth.js";
+import { AnalyticsReader } from "./analytics-reader.js";
+import { AgentRunError, createDefaultAnalysis } from "./agent-runtime.js";
 
 const SESSION_COOKIE = "valorant_session";
 
@@ -24,6 +26,7 @@ type RuntimeDependencies = {
   pool: Pool;
   redis: Redis;
   oauth?: RiotOAuthService;
+  analyticsReader?: AnalyticsReader;
 };
 
 function readCookie(header: string | undefined, name: string): string | undefined {
@@ -63,6 +66,7 @@ export function buildApp(dependencies: RuntimeDependencies = {
     scopes: riotRsoScopes,
     encryptionKey: tokenEncryptionKey
   }, new PostgresRiotOAuthStore(dependencies.pool));
+  const analyticsReader = dependencies.analyticsReader ?? new AnalyticsReader(dependencies.pool);
 
   app.get("/health", async () => {
     await dependencies.pool.query("SELECT 1");
@@ -89,8 +93,19 @@ export function buildApp(dependencies: RuntimeDependencies = {
     await oauth.disconnect(session.userId);
     return reply.code(204).send();
   });
+  app.post("/agent/analyze", async (request, reply) => {
+    const session = await oauth.getSession(readCookie(request.headers.cookie, SESSION_COOKIE));
+    if (!session) throw new RiotOAuthError("authorization", 401, "A valid product session is required");
+    const body = request.body as { question?: unknown } | undefined;
+    if (typeof body?.question !== "string") throw new AgentRunError("invalid_input", "question must be a string");
+    const result = await createDefaultAnalysis({
+      user: { userId: session.userId }, question: body.question, reader: analyticsReader
+    });
+    return reply.send(result);
+  });
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof RiotOAuthError) return reply.code(error.statusCode).send({ error: error.kind, message: error.message });
+    if (error instanceof AgentRunError) return reply.code(error.code === "invalid_input" ? 400 : 422).send({ error: error.code, message: error.message });
     return reply.code(500).send({ error: "internal", message: "Internal server error" });
   });
   app.addHook("onClose", async () => {

@@ -57,4 +57,24 @@ describe("Riot RSO routes", () => {
     expect(disconnected).toEqual(["user-1"]);
     await app.close();
   });
+
+  it("runs analysis only for the authenticated session", async () => {
+    const calls: string[] = [];
+    const app = buildApp({
+      ...inertDependencies,
+      oauth: {
+        getSession: async () => ({ userId: "user-1", token: "session-token", expiresAt }),
+      } as never,
+      analyticsReader: {
+        getPlayerSummary: async (userId: string) => { calls.push(userId); return { scope: { queue: "competitive", sampleSize: 0 }, metrics: null }; },
+        getMatchList: async () => ({ scope: { queue: "competitive", sampleSize: 0 }, matches: [] }),
+        getRoundEvidence: async () => ({ scope: { queue: "competitive", sampleSize: 0 }, evidence: [] })
+      } as never
+    });
+    const response = await app.inject({ method: "POST", url: "/agent/analyze", headers: { cookie: "valorant_session=session-token" }, payload: { question: "Why am I losing?" } });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().answer.confidence).toBe("low");
+    expect(calls).toEqual(["user-1"]);
+    await app.close();
+  });
 });
