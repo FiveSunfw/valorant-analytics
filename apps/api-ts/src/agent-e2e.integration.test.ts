@@ -41,6 +41,10 @@ describeIntegration("fixture analysis agent", () => {
         toolCalls: 2,
         answer: { playerEvidence: expect.arrayContaining([expect.objectContaining({ matchId, roundNumber: 1 })]) }
       });
+      expect((await pool.query("SELECT model_provider, tool_calls FROM agent_runs WHERE run_id = $1", [response.json().runId])).rows[0]).toMatchObject({
+        model_provider: "deterministic",
+        tool_calls: expect.arrayContaining([expect.objectContaining({ toolName: "find_round_evidence" })])
+      });
     } finally {
       await pool.query("DELETE FROM users WHERE id = $1", [userId]);
       await pool.query("DELETE FROM matches WHERE match_id = $1", [matchId]);

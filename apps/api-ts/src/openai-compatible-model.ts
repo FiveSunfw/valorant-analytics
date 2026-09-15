@@ -10,9 +10,11 @@ export type OpenAICompatibleModelOptions = {
 
 export class OpenAICompatibleAgentModel implements AgentModel {
   private readonly client: Pick<OpenAI, "chat">;
+  readonly provider: string;
 
   constructor(private readonly options: OpenAICompatibleModelOptions, client?: Pick<OpenAI, "chat">) {
     this.client = client ?? new OpenAI({ apiKey: options.apiKey, baseURL: options.baseURL });
+    this.provider = `openai-compatible:${options.model}`;
   }
 
   async respond(request: AgentModelRequest): Promise<AgentModelDecision> {

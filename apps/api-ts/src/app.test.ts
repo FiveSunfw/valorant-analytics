@@ -72,7 +72,8 @@ describe("Riot RSO routes", () => {
         findRoundEvidence: async () => ({ scope: { queue: "competitive", sampleSize: 0 }, evidence: [] }),
         getRoundEvidence: async () => ({ scope: { queue: "competitive", sampleSize: 0 }, evidence: [] })
       } as never,
-      agentModel: new DeterministicAnalysisModel()
+      agentModel: new DeterministicAnalysisModel(),
+      agentTrace: null
     });
     const response = await app.inject({ method: "POST", url: "/agent/analyze", headers: { cookie: "valorant_session=session-token" }, payload: { question: "Why am I losing?" } });
     expect(response.statusCode).toBe(200);

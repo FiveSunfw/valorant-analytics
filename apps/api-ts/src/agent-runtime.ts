@@ -3,6 +3,7 @@ import { z } from "zod";
 import { analysisAnswerSchema, type AnalysisAnswer, type AuthenticatedUser } from "./agent-contracts.js";
 import { createAnalyticsTools, type AnalyticsTool } from "./agent-tools.js";
 import { promptRegistry } from "./agent/prompts/registry.js";
+import type { AgentTraceSink } from "./agent-trace.js";
 
 export type AgentModelRequest = {
   runId: string;
@@ -18,6 +19,7 @@ export type AgentModelDecision =
   | { kind: "refusal"; reason: string; message: string };
 
 export interface AgentModel {
+  readonly provider?: string;
   respond(request: AgentModelRequest): Promise<AgentModelDecision>;
 }
 
@@ -50,6 +52,7 @@ export type AgentRunOptions = {
   maxSteps?: number;
   maxToolCalls?: number;
   toolTimeoutMs?: number;
+  traceSink?: AgentTraceSink | null;
 };
 
 function unsupportedQuestion(question: string): boolean {
@@ -73,24 +76,37 @@ export async function runAnalysis(options: AgentRunOptions): Promise<AgentRunRes
   if (!question) throw new AgentRunError("invalid_input", "A question is required");
   const prompt = promptRegistry.get("agent.supervisor.system");
   const sharedPolicy = promptRegistry.get("agent.shared.policy");
+  const runId = options.runId ?? randomUUID();
+  const startedAt = Date.now();
+  const observations: ToolObservation[] = [];
+  let toolCalls = 0;
+  const complete = async (answer: AnalysisAnswer): Promise<AgentRunResult> => {
+    const result = { runId, prompt, toolCalls, answer };
+    await options.traceSink?.save({
+      runId,
+      userId: options.user.userId,
+      question,
+      prompt,
+      modelProvider: options.model.provider ?? "unknown",
+      toolCalls: observations,
+      answer,
+      status: "completed",
+      latencyMs: Date.now() - startedAt
+    });
+    return result;
+  };
   if (unsupportedQuestion(question)) {
-    return {
-      runId: options.runId ?? randomUUID(), prompt, toolCalls: 0,
-      answer: analysisAnswerSchema.parse({
+    return complete(analysisAnswerSchema.parse({
         conclusion: "This analysis is outside the supported post-match scope.",
         playerEvidence: [], knowledgeEvidence: [], confidence: "high", recommendations: [],
         limitations: ["The product does not provide pre-match scouting, real-time instructions, cheat assistance, or hidden MMR/ELO claims."],
         nextQuestions: ["Ask about your own completed competitive matches instead."]
-      })
-    };
+      }));
   }
 
-  const runId = options.runId ?? randomUUID();
   const maxSteps = options.maxSteps ?? prompt.budget.maxSteps;
   const maxToolCalls = options.maxToolCalls ?? prompt.budget.maxToolCalls;
-  const observations: ToolObservation[] = [];
   const tools = new Map(options.tools.map((tool) => [tool.name, tool]));
-  let toolCalls = 0;
 
   for (let step = 0; step < maxSteps; step += 1) {
     let decision: AgentModelDecision;
@@ -103,15 +119,15 @@ export async function runAnalysis(options: AgentRunOptions): Promise<AgentRunRes
       throw new AgentRunError("model_failed", error instanceof Error ? error.message : "Model request failed");
     }
     if (decision.kind === "refusal") {
-      return { runId, prompt, toolCalls, answer: analysisAnswerSchema.parse({
+      return complete(analysisAnswerSchema.parse({
         conclusion: decision.message, playerEvidence: [], knowledgeEvidence: [], confidence: "high",
         recommendations: [], limitations: [decision.reason], nextQuestions: []
-      }) };
+      }));
     }
     if (decision.kind === "final") {
       const parsed = analysisAnswerSchema.safeParse(decision.answer);
       if (!parsed.success) throw new AgentRunError("invalid_output", "Model returned an invalid evidence-bound answer");
-      return { runId, prompt, toolCalls, answer: parsed.data };
+      return complete(parsed.data);
     }
     if (toolCalls >= maxToolCalls) throw new AgentRunError("budget_exceeded", "Tool-call budget exceeded");
     const tool = tools.get(decision.toolName);
@@ -131,6 +147,7 @@ export async function runAnalysis(options: AgentRunOptions): Promise<AgentRunRes
 }
 
 export class DeterministicAnalysisModel implements AgentModel {
+  readonly provider = "deterministic";
   async respond(request: AgentModelRequest): Promise<AgentModelDecision> {
     const summary = request.observations.find((observation) => observation.toolName === "get_player_summary");
     if (!summary) return { kind: "tool_call", toolName: "get_player_summary", input: {} };
