@@ -16,11 +16,13 @@ import {
   riotRsoUserinfoUrl,
   tokenEncryptionKey
 } from "./config.js";
+import { enableDemoMode } from "./config.js";
 import { PostgresRiotOAuthStore, RiotOAuthError, RiotOAuthService } from "./riot-oauth.js";
 import { AnalyticsReader } from "./analytics-reader.js";
 import { AgentRunError, createDefaultAnalysis, type AgentModel } from "./agent-runtime.js";
 import { createAgentModelFromEnvironment } from "./openai-compatible-model.js";
 import { PostgresAgentTraceSink, type AgentTraceSink } from "./agent-trace.js";
+import { DemoSessionError, DemoSessionService } from "./demo-session.js";
 
 const SESSION_COOKIE = "valorant_session";
 
@@ -31,6 +33,8 @@ type RuntimeDependencies = {
   analyticsReader?: AnalyticsReader;
   agentModel?: AgentModel;
   agentTrace?: AgentTraceSink | null;
+  demoMode?: boolean;
+  demoSession?: { create(): Promise<{ token: string; expiresAt: Date }> };
 };
 
 function readCookie(header: string | undefined, name: string): string | undefined {
@@ -73,6 +77,8 @@ export function buildApp(dependencies: RuntimeDependencies = {
   const analyticsReader = dependencies.analyticsReader ?? new AnalyticsReader(dependencies.pool);
   const agentModel = dependencies.agentModel ?? createAgentModelFromEnvironment();
   const agentTrace = dependencies.agentTrace === undefined ? new PostgresAgentTraceSink(dependencies.pool) : dependencies.agentTrace;
+  const demoMode = dependencies.demoMode ?? enableDemoMode;
+  const demoSession = dependencies.demoSession ?? new DemoSessionService(dependencies.pool);
 
   app.get("/health", async () => {
     await dependencies.pool.query("SELECT 1");
@@ -99,6 +105,13 @@ export function buildApp(dependencies: RuntimeDependencies = {
     await oauth.disconnect(session.userId);
     return reply.code(204).send();
   });
+  if (demoMode && process.env.NODE_ENV !== "production") {
+    app.post("/auth/demo", async (_request, reply) => {
+      const session = await demoSession.create();
+      reply.header("Set-Cookie", sessionCookie(session.token, Math.floor((session.expiresAt.getTime() - Date.now()) / 1_000)));
+      return reply.send({ mode: "demo" });
+    });
+  }
   app.post("/agent/analyze", async (request, reply) => {
     const session = await oauth.getSession(readCookie(request.headers.cookie, SESSION_COOKIE));
     if (!session) throw new RiotOAuthError("authorization", 401, "A valid product session is required");
@@ -111,6 +124,7 @@ export function buildApp(dependencies: RuntimeDependencies = {
   });
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof RiotOAuthError) return reply.code(error.statusCode).send({ error: error.kind, message: error.message });
+    if (error instanceof DemoSessionError) return reply.code(409).send({ error: "demo_not_seeded", message: error.message });
     if (error instanceof AgentRunError) return reply.code(error.code === "invalid_input" ? 400 : 422).send({ error: error.code, message: error.message });
     return reply.code(500).send({ error: "internal", message: "Internal server error" });
   });

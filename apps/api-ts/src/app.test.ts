@@ -6,6 +6,24 @@ const expiresAt = new Date("2030-01-01T00:00:00.000Z");
 const inertDependencies = { pool: { end: async () => undefined } as never, redis: { quit: async () => "OK" } as never };
 
 describe("Riot RSO routes", () => {
+  it("registers demo login only when explicitly enabled and never accepts a player identity", async () => {
+    const disabled = buildApp({ ...inertDependencies, demoMode: false, agentTrace: null });
+    expect((await disabled.inject({ method: "POST", url: "/auth/demo", payload: { userId: "other-user" } })).statusCode).toBe(404);
+    await disabled.close();
+
+    const enabled = buildApp({
+      ...inertDependencies,
+      demoMode: true,
+      demoSession: { create: async () => ({ token: "demo-session", expiresAt }) },
+      agentTrace: null
+    });
+    const response = await enabled.inject({ method: "POST", url: "/auth/demo", payload: { userId: "other-user", puuid: "other-puuid" } });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ mode: "demo" });
+    expect(response.headers["set-cookie"]).toContain("valorant_session=demo-session");
+    await enabled.close();
+  });
+
   it("starts RSO with an HttpOnly product session cookie", async () => {
     const calls: string[] = [];
     const app = buildApp({

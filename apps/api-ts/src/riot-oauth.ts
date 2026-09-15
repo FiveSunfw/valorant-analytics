@@ -227,6 +227,15 @@ export class PostgresRiotOAuthStore implements RiotOAuthStore {
     return { userId, token, expiresAt };
   }
 
+  async createSessionForUser(userId: string): Promise<ProductSession | null> {
+    const account = await this.pool.query("SELECT 1 FROM riot_accounts WHERE user_id = $1", [userId]);
+    if (account.rowCount === 0) return null;
+    const token = base64Url(32);
+    const expiresAt = new Date(this.now().getTime() + SESSION_TTL_MS);
+    await this.pool.query("INSERT INTO user_sessions (token_hash, user_id, expires_at) VALUES ($1, $2, $3)", [hash(token), userId, expiresAt]);
+    return { userId, token, expiresAt };
+  }
+
   async createState(stateHash: string, state: OAuthState, expiresAt: Date): Promise<void> {
     await this.pool.query("INSERT INTO riot_oauth_states (state_hash, code_verifier, user_id, expires_at) VALUES ($1, $2, $3, $4)", [stateHash, state.codeVerifier, state.userId, expiresAt]);
   }
