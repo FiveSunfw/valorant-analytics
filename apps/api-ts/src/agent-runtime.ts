@@ -36,6 +36,7 @@ export type AgentRunResult = {
   runId: string;
   prompt: { id: string; version: string; hash: string };
   toolCalls: number;
+  toolNames: string[];
   answer: AnalysisAnswer;
   usage: ModelUsage & { estimatedCostUsd: number | null };
 };
@@ -61,7 +62,7 @@ export type AgentRunOptions = {
 };
 
 function unsupportedQuestion(question: string): boolean {
-  return /(实时指挥|实时对局|赛前侦察|对手信息|作弊|外挂|隐藏\s*(mmr|elo)|hidden\s*(mmr|elo))/i.test(question);
+  return /(实时指挥|实时对局|赛前侦察|对手信息|其他玩家|他人.*puuid|作弊|外挂|api[_\s-]?key|access[_\s-]?token|隐藏\s*(mmr|elo)|hidden\s*(mmr|elo))/i.test(question);
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -90,7 +91,7 @@ export async function runAnalysis(options: AgentRunOptions): Promise<AgentRunRes
   const estimatedCostUsd = options.usageRates?.inputUsdPerMillion === undefined || options.usageRates?.outputUsdPerMillion === undefined ? null : 0;
   const complete = async (answer: AnalysisAnswer): Promise<AgentRunResult> => {
     const finalUsage = { ...usage, estimatedCostUsd: estimatedCostUsd === null ? null : (usage.inputTokens * options.usageRates!.inputUsdPerMillion! + usage.outputTokens * options.usageRates!.outputUsdPerMillion!) / 1_000_000 };
-    const result = { runId, prompt, toolCalls, answer, usage: finalUsage };
+    const result = { runId, prompt, toolCalls, toolNames: observations.map((observation) => observation.toolName), answer, usage: finalUsage };
     await options.traceSink?.save({
       runId,
       userId: options.user.userId,

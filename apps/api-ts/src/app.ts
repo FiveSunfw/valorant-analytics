@@ -122,7 +122,8 @@ export function buildApp(dependencies: RuntimeDependencies = {
     });
     return reply.send(result);
   });
-  app.setErrorHandler((error, _request, reply) => {
+  app.setErrorHandler((error, request, reply) => {
+    request.log.error({ err: error }, "Request failed");
     if (error instanceof RiotOAuthError) return reply.code(error.statusCode).send({ error: error.kind, message: error.message });
     if (error instanceof DemoSessionError) return reply.code(409).send({ error: "demo_not_seeded", message: error.message });
     if (error instanceof AgentRunError) return reply.code(error.code === "model_failed" ? 503 : error.code === "invalid_input" ? 400 : 422).send({ error: error.code, message: error.message });

@@ -1,0 +1,16 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
+
+type EvalCase = { id: string; question: string; expectedTools: string[]; expectRefusal: boolean };
+type ApiResult = { runId?: string; toolCalls?: number; toolNames?: string[]; answer?: { playerEvidence?: unknown[]; recommendations?: unknown[] }; usage?: unknown; error?: string };
+const apiUrl = process.env.EVAL_API_URL ?? "http://127.0.0.1:8000";
+const root = resolve(import.meta.dirname, "../../..");
+const cases = (await readFile(resolve(root, "eval/cases.jsonl"), "utf8")).trim().split("\n").map((line) => JSON.parse(line) as EvalCase);
+async function request(path: string, init: RequestInit, retry = true): Promise<Response> { try { return await fetch(`${apiUrl}${path}`, init); } catch (error) { if (retry) return request(path, init, false); throw error; } }
+const login = await request("/auth/demo", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+if (!login.ok) throw new Error(`Demo login failed: ${login.status} ${await login.text()}`);
+const cookie = login.headers.get("set-cookie");
+if (!cookie) throw new Error("Demo login did not return a session cookie");
+const results = [];
+for (const item of cases) { const startedAt = Date.now(); try { let response = await request("/agent/analyze", { method: "POST", headers: { "content-type": "application/json", cookie }, body: JSON.stringify({ question: item.question }) }); let payload = await response.json() as ApiResult; if (response.status === 503 && payload.error === "model_failed") { response = await request("/agent/analyze", { method: "POST", headers: { "content-type": "application/json", cookie }, body: JSON.stringify({ question: item.question }) }); payload = await response.json() as ApiResult; } const providerUnavailable = response.status === 503 && payload.error === "model_failed"; const actualTools = payload.toolNames ?? []; const refused = response.ok && actualTools.length === 0; const invalidInput = response.status === 400 && payload.error === "invalid_input"; results.push({ ...item, actualTools, status: response.status, runId: payload.runId ?? null, toolCalls: payload.toolCalls ?? null, evidenceValid: response.ok ? payload.answer?.playerEvidence !== undefined : null, refused, providerUnavailable, latencyMs: Date.now() - startedAt, usage: payload.usage ?? null, error: payload.error ?? null, passed: !providerUnavailable && (invalidInput || (item.expectRefusal ? refused : response.ok && JSON.stringify(actualTools) === JSON.stringify(item.expectedTools))) }); } catch (error) { results.push({ ...item, status: null, providerUnavailable: true, latencyMs: Date.now() - startedAt, error: error instanceof Error ? error.message : "connection error", passed: false }); } }
+await mkdir(resolve(root, "eval/results"), { recursive: true }); const output = resolve(root, `eval/results/${new Date().toISOString().replaceAll(":", "-")}.jsonl`); await writeFile(output, `${results.map((result) => JSON.stringify(result)).join("\n")}\n`); console.info(JSON.stringify({ cases: results.length, passed: results.filter((result) => result.passed).length, providerUnavailable: results.filter((result) => result.providerUnavailable).length, output }));

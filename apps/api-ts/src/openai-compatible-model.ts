@@ -35,6 +35,8 @@ Each playerEvidence item must contain claim plus either metricName or both match
           + "\nFor questions comparing attack and defense or 进攻 and 防守: call compare_attack_defense before returning the final JSON."
           + "\nFor questions about map performance or 地图表现: call compare_map_performance before returning the final JSON."
           + "\nFor questions about recent trends, improvement, decline, 最近状态, 变好, or 变差: call compare_recent_periods before returning the final JSON."
+          + "\nFor a general summary, small-sample limitation, or no-data question: call only get_player_summary. Do not call trend, map, attack-defense, or match-detail tools unless the user explicitly asks for that comparison."
+          + "\nFor a review of the latest match: call get_match_list first, then get_match_detail for that match. Do not call get_player_summary."
         },
         { role: "user", content: `Question: ${request.userMessage}\nTool observations: ${observations}` }
       ],

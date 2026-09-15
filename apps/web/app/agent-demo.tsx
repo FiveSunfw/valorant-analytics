@@ -8,7 +8,7 @@ const presets = ["我的攻守方表现有什么差异？", "我最近的趋势�
 export function AgentDemo() {
   const [loggedIn, setLoggedIn] = useState(false); const [question, setQuestion] = useState(presets[0]);
   const [result, setResult] = useState<Result | null>(null); const [error, setError] = useState<string | null>(null); const [loading, setLoading] = useState(false);
-  async function demoLogin() { setLoading(true); setError(null); const response = await fetch("/api/auth/demo", { method: "POST" }); setLoading(false); if (!response.ok) return setError((await response.json()).message ?? "Demo 登录失败"); setLoggedIn(true); }
+  async function demoLogin() { setLoading(true); setError(null); const response = await fetch("/api/auth/demo", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }); setLoading(false); if (!response.ok) return setError((await response.json()).message ?? "Demo 登录失败"); setLoggedIn(true); }
   async function analyze() { setLoading(true); setError(null); setResult(null); const response = await fetch("/api/agent/analyze", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ question }) }); const payload = await response.json(); setLoading(false); if (!response.ok) return setError(payload.message ?? "分析失败，请重试。"); setResult(payload); }
   return <main style={{ fontFamily: "system-ui", maxWidth: 880, margin: "0 auto", padding: "48px 24px", lineHeight: 1.55 }}>
     <h1>VALORANT Analytics</h1><p>国际服竞技赛后复盘 · 单 Agent 演示</p>
