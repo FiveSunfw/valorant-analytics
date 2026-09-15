@@ -16,7 +16,7 @@ import {
   riotRsoUserinfoUrl,
   tokenEncryptionKey
 } from "./config.js";
-import { enableDemoMode } from "./config.js";
+import { analysisModelInputUsdPerMillion, analysisModelOutputUsdPerMillion, enableDemoMode } from "./config.js";
 import { PostgresRiotOAuthStore, RiotOAuthError, RiotOAuthService } from "./riot-oauth.js";
 import { AnalyticsReader } from "./analytics-reader.js";
 import { AgentRunError, createDefaultAnalysis, type AgentModel } from "./agent-runtime.js";
@@ -118,14 +118,14 @@ export function buildApp(dependencies: RuntimeDependencies = {
     const body = request.body as { question?: unknown } | undefined;
     if (typeof body?.question !== "string") throw new AgentRunError("invalid_input", "question must be a string");
     const result = await createDefaultAnalysis({
-      user: { userId: session.userId }, question: body.question, reader: analyticsReader, model: agentModel, traceSink: agentTrace
+      user: { userId: session.userId }, question: body.question, reader: analyticsReader, model: agentModel, traceSink: agentTrace, usageRates: { inputUsdPerMillion: analysisModelInputUsdPerMillion, outputUsdPerMillion: analysisModelOutputUsdPerMillion }
     });
     return reply.send(result);
   });
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof RiotOAuthError) return reply.code(error.statusCode).send({ error: error.kind, message: error.message });
     if (error instanceof DemoSessionError) return reply.code(409).send({ error: "demo_not_seeded", message: error.message });
-    if (error instanceof AgentRunError) return reply.code(error.code === "invalid_input" ? 400 : 422).send({ error: error.code, message: error.message });
+    if (error instanceof AgentRunError) return reply.code(error.code === "model_failed" ? 503 : error.code === "invalid_input" ? 400 : 422).send({ error: error.code, message: error.message });
     return reply.code(500).send({ error: "internal", message: "Internal server error" });
   });
   app.addHook("onClose", async () => {

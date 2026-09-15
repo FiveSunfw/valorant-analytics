@@ -19,3 +19,5 @@ export const analysisModelApiKey = process.env.DEEPSEEK_API_KEY ?? "";
 export const analysisModelBaseUrl = process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com/v1";
 export const analysisModelName = process.env.DEEPSEEK_MODEL ?? "deepseek-flash";
 export const enableDemoMode = process.env.ENABLE_DEMO_MODE === "true";
+export const analysisModelInputUsdPerMillion = process.env.DEEPSEEK_INPUT_USD_PER_MILLION ? Number(process.env.DEEPSEEK_INPUT_USD_PER_MILLION) : undefined;
+export const analysisModelOutputUsdPerMillion = process.env.DEEPSEEK_OUTPUT_USD_PER_MILLION ? Number(process.env.DEEPSEEK_OUTPUT_USD_PER_MILLION) : undefined;

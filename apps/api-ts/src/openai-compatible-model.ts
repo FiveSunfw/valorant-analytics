@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { analysisModelApiKey, analysisModelBaseUrl, analysisModelName } from "./config.js";
-import { DeterministicAnalysisModel, type AgentModel, type AgentModelDecision, type AgentModelRequest } from "./agent-runtime.js";
+import { DeterministicAnalysisModel, type AgentModel, type AgentModelResponse, type AgentModelRequest } from "./agent-runtime.js";
 
 export type OpenAICompatibleModelOptions = {
   apiKey: string;
@@ -17,7 +17,7 @@ export class OpenAICompatibleAgentModel implements AgentModel {
     this.provider = `openai-compatible:${options.model}`;
   }
 
-  async respond(request: AgentModelRequest): Promise<AgentModelDecision> {
+  async respond(request: AgentModelRequest): Promise<AgentModelResponse> {
     const observations = request.observations.length
       ? JSON.stringify(request.observations)
       : "No tools have been called yet.";
@@ -48,15 +48,15 @@ Each playerEvidence item must contain claim plus either metricName or both match
     const message = completion.choices[0]?.message;
     const toolCall = message?.tool_calls?.find((call) => call.type === "function");
     if (toolCall?.type === "function") {
-      return {
+      return { decision: {
         kind: "tool_call",
         toolName: toolCall.function.name,
         input: JSON.parse(toolCall.function.arguments || "{}") as unknown
-      };
+      }, usage: { inputTokens: completion.usage?.prompt_tokens ?? 0, outputTokens: completion.usage?.completion_tokens ?? 0, totalTokens: completion.usage?.total_tokens ?? 0 } };
     }
     if (!message?.content) throw new Error("Model returned neither a tool call nor a final answer");
     const content = message.content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-    return { kind: "final", answer: JSON.parse(content) as unknown };
+    return { decision: { kind: "final", answer: JSON.parse(content) as unknown }, usage: { inputTokens: completion.usage?.prompt_tokens ?? 0, outputTokens: completion.usage?.completion_tokens ?? 0, totalTokens: completion.usage?.total_tokens ?? 0 } };
   }
 }
 

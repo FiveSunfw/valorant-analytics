@@ -16,7 +16,7 @@ const reader = {
 
 class ScriptedModel implements AgentModel {
   constructor(private readonly decisions: AgentModelRequest extends never ? never : any[]) {}
-  async respond(): Promise<any> { return this.decisions.shift(); }
+  async respond(): Promise<any> { return { decision: this.decisions.shift(), usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 } }; }
 }
 
 describe("minimal analysis agent", () => {

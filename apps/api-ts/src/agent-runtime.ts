@@ -18,9 +18,12 @@ export type AgentModelDecision =
   | { kind: "final"; answer: unknown }
   | { kind: "refusal"; reason: string; message: string };
 
+export type ModelUsage = { inputTokens: number; outputTokens: number; totalTokens: number };
+export type AgentModelResponse = { decision: AgentModelDecision; usage: ModelUsage };
+
 export interface AgentModel {
   readonly provider?: string;
-  respond(request: AgentModelRequest): Promise<AgentModelDecision>;
+  respond(request: AgentModelRequest): Promise<AgentModelResponse>;
 }
 
 export type ToolObservation = {
@@ -34,6 +37,7 @@ export type AgentRunResult = {
   prompt: { id: string; version: string; hash: string };
   toolCalls: number;
   answer: AnalysisAnswer;
+  usage: ModelUsage & { estimatedCostUsd: number | null };
 };
 
 export class AgentRunError extends Error {
@@ -53,6 +57,7 @@ export type AgentRunOptions = {
   maxToolCalls?: number;
   toolTimeoutMs?: number;
   traceSink?: AgentTraceSink | null;
+  usageRates?: { inputUsdPerMillion?: number; outputUsdPerMillion?: number };
 };
 
 function unsupportedQuestion(question: string): boolean {
@@ -80,8 +85,12 @@ export async function runAnalysis(options: AgentRunOptions): Promise<AgentRunRes
   const startedAt = Date.now();
   const observations: ToolObservation[] = [];
   let toolCalls = 0;
+  let steps = 0;
+  const usage: ModelUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+  const estimatedCostUsd = options.usageRates?.inputUsdPerMillion === undefined || options.usageRates?.outputUsdPerMillion === undefined ? null : 0;
   const complete = async (answer: AnalysisAnswer): Promise<AgentRunResult> => {
-    const result = { runId, prompt, toolCalls, answer };
+    const finalUsage = { ...usage, estimatedCostUsd: estimatedCostUsd === null ? null : (usage.inputTokens * options.usageRates!.inputUsdPerMillion! + usage.outputTokens * options.usageRates!.outputUsdPerMillion!) / 1_000_000 };
+    const result = { runId, prompt, toolCalls, answer, usage: finalUsage };
     await options.traceSink?.save({
       runId,
       userId: options.user.userId,
@@ -91,7 +100,7 @@ export async function runAnalysis(options: AgentRunOptions): Promise<AgentRunRes
       toolCalls: observations,
       answer,
       status: "completed",
-      latencyMs: Date.now() - startedAt
+      latencyMs: Date.now() - startedAt, steps, usage: finalUsage
     });
     return result;
   };
@@ -108,16 +117,19 @@ export async function runAnalysis(options: AgentRunOptions): Promise<AgentRunRes
   const maxToolCalls = options.maxToolCalls ?? prompt.budget.maxToolCalls;
   const tools = new Map(options.tools.map((tool) => [tool.name, tool]));
 
-  for (let step = 0; step < maxSteps; step += 1) {
-    let decision: AgentModelDecision;
+  try { for (let step = 0; step < maxSteps; step += 1) {
+    let response: AgentModelResponse;
     try {
-      decision = await options.model.respond({
+      response = await options.model.respond({
         runId, userMessage: question, systemPrompt: `${sharedPolicy.template}\n${prompt.template}`,
         tools: options.tools.map(({ name, description, modelSchema }) => ({ name, description, inputSchema: modelSchema })), observations
       });
     } catch (error) {
       throw new AgentRunError("model_failed", error instanceof Error ? error.message : "Model request failed");
     }
+    steps += 1;
+    usage.inputTokens += response.usage.inputTokens; usage.outputTokens += response.usage.outputTokens; usage.totalTokens += response.usage.totalTokens;
+    const decision = response.decision;
     if (decision.kind === "refusal") {
       return complete(analysisAnswerSchema.parse({
         conclusion: decision.message, playerEvidence: [], knowledgeEvidence: [], confidence: "high",
@@ -147,24 +159,29 @@ export async function runAnalysis(options: AgentRunOptions): Promise<AgentRunRes
     }
   }
   throw new AgentRunError("budget_exceeded", "Agent step budget exceeded");
+  } catch (error) {
+    const failure = error instanceof AgentRunError ? error : new AgentRunError("model_failed", "Agent run failed");
+    await options.traceSink?.save({ runId, userId: options.user.userId, question, prompt, modelProvider: options.model.provider ?? "unknown", toolCalls: observations, answer: null, status: "failed", errorCode: failure.code, errorMessage: failure.message, latencyMs: Date.now() - startedAt, steps, usage: { ...usage, estimatedCostUsd: null } });
+    throw failure;
+  }
 }
 
 export class DeterministicAnalysisModel implements AgentModel {
   readonly provider = "deterministic";
-  async respond(request: AgentModelRequest): Promise<AgentModelDecision> {
+  async respond(request: AgentModelRequest): Promise<AgentModelResponse> {
     const summary = request.observations.find((observation) => observation.toolName === "get_player_summary");
-    if (!summary) return { kind: "tool_call", toolName: "get_player_summary", input: {} };
+    if (!summary) return { decision: { kind: "tool_call", toolName: "get_player_summary", input: {} }, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 } };
     const data = summary.result as { scope?: { sampleSize?: number; limitation?: string }; metrics?: Record<string, number> | null };
     const metrics = data.metrics;
-    if (!metrics) return { kind: "final", answer: {
+    if (!metrics) return { decision: { kind: "final", answer: {
       conclusion: "There is not enough completed competitive data to identify a stable trend yet.", playerEvidence: [], knowledgeEvidence: [], confidence: "low",
       recommendations: [{ action: "Play and sync more completed competitive matches", rationale: "The current data set has no usable player metrics." }],
       limitations: [data.scope?.limitation ?? "No completed competitive matches are available."], nextQuestions: ["Which recent match should we review after more data is synced?"]
-    } };
+    } }, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 } };
     const asksAboutFirstDeaths = /(先死|首死|first\s*death|opening\s*death)/i.test(request.userMessage);
     const foundRounds = request.observations.find((observation) => observation.toolName === "find_round_evidence");
     if (asksAboutFirstDeaths && !foundRounds) {
-      return { kind: "tool_call", toolName: "find_round_evidence", input: { eventType: "first_death", limit: 5 } };
+      return { decision: { kind: "tool_call", toolName: "find_round_evidence", input: { eventType: "first_death", limit: 5 } }, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 } };
     }
     const firstDeathRate = metrics.firstDeathRate;
     const metricName = typeof firstDeathRate === "number" ? "first_death_rate" : "adr";
@@ -175,12 +192,12 @@ export class DeterministicAnalysisModel implements AgentModel {
       matchId: round.matchId,
       roundNumber: round.roundNumber
     }));
-    return { kind: "final", answer: {
+    return { decision: { kind: "final", answer: {
       conclusion: `Your recent competitive sample has ${metricName.replaceAll("_", " ")} at ${value}. Use this as a review signal, not a diagnosis.`,
       playerEvidence: [{ claim: `${metricName} is ${value}.`, metricName }, ...roundCitations], knowledgeEvidence: [], confidence: data.scope?.sampleSize && data.scope.sampleSize >= 5 ? "medium" : "low",
       recommendations: [{ action: "Review the rounds behind this metric", rationale: "A round-level review can separate repeatable patterns from a small-sample fluctuation." }],
       limitations: [data.scope?.limitation ?? "Metrics are limited to completed competitive matches.", ...(asksAboutFirstDeaths && rounds.length === 0 ? ["No concrete first-death rounds were found in the current sample."] : [])], nextQuestions: ["Would you like to inspect a specific round or compare recent matches?"]
-    } };
+    } }, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 } };
   }
 }
 

@@ -26,7 +26,7 @@ describe("OpenAI-compatible analysis model", () => {
       observations: []
     };
 
-    await expect(model.respond(request)).resolves.toEqual({ kind: "tool_call", toolName: "get_player_summary", input: {} });
-    await expect(model.respond({ ...request, observations: [{ toolName: "get_player_summary", input: {}, result: { metrics: { firstDeathRate: 20 } } }] })).resolves.toMatchObject({ kind: "final", answer: { confidence: "medium" } });
+    await expect(model.respond(request)).resolves.toMatchObject({ decision: { kind: "tool_call", toolName: "get_player_summary", input: {} }, usage: { totalTokens: 0 } });
+    await expect(model.respond({ ...request, observations: [{ toolName: "get_player_summary", input: {}, result: { metrics: { firstDeathRate: 20 } } }] })).resolves.toMatchObject({ decision: { kind: "final", answer: { confidence: "medium" } } });
   });
 });
