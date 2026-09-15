@@ -34,6 +34,7 @@ Each playerEvidence item must contain claim plus either metricName or both match
           + "\nFor questions about first deaths, opening deaths, 首死, or 先死: call get_player_summary and find_round_evidence before returning the final JSON."
           + "\nFor questions comparing attack and defense or 进攻 and 防守: call compare_attack_defense before returning the final JSON."
           + "\nFor questions about map performance or 地图表现: call compare_map_performance before returning the final JSON."
+          + "\nFor questions about recent trends, improvement, decline, 最近状态, 变好, or 变差: call compare_recent_periods before returning the final JSON."
         },
         { role: "user", content: `Question: ${request.userMessage}\nTool observations: ${observations}` }
       ],

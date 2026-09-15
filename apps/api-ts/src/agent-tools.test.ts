@@ -10,6 +10,7 @@ describe("analysis tools", () => {
       getMatchDetail: async (...args: unknown[]) => { calls.push(args); return { scope: { queue: "competitive" as const, sampleSize: 0 }, match: null }; },
       compareAttackDefense: async (...args: unknown[]) => { calls.push(args); return { scope: { queue: "competitive" as const, sampleSize: 0 }, attack: { roundsPlayed: 0, roundsWon: 0, winRate: 0 }, defense: { roundsPlayed: 0, roundsWon: 0, winRate: 0 } }; },
       compareMapPerformance: async (...args: unknown[]) => { calls.push(args); return { scope: { queue: "competitive" as const, sampleSize: 0 }, maps: [] }; },
+      compareRecentPeriods: async (...args: unknown[]) => { calls.push(args); return { scope: { queue: "competitive" as const, sampleSize: 0 }, matchesPerPeriod: 3, recent: null, previous: null, deltas: null }; },
       findRoundEvidence: async (...args: unknown[]) => { calls.push(args); return { scope: { queue: "competitive" as const, sampleSize: 0 }, evidence: [] }; },
       getRoundEvidence: async (...args: unknown[]) => { calls.push(args); return { scope: { queue: "competitive" as const, sampleSize: 0 }, evidence: [] }; }
     };
@@ -19,14 +20,16 @@ describe("analysis tools", () => {
     await tools[2].execute({ matchId: "match-1" });
     await tools[3].execute({});
     await tools[4].execute({});
-    await tools[5].execute({ eventType: "first_death", limit: 2 });
-    await tools[6].execute({ matchId: "match-1", roundNumber: 1 });
+    await tools[5].execute({ matchesPerPeriod: 3 });
+    await tools[6].execute({ eventType: "first_death", limit: 2 });
+    await tools[7].execute({ matchId: "match-1", roundNumber: 1 });
     expect(calls).toEqual([
       ["a28f4545-1443-4e7b-b456-1d1c1e65f9c0"],
       ["a28f4545-1443-4e7b-b456-1d1c1e65f9c0", 5],
       ["a28f4545-1443-4e7b-b456-1d1c1e65f9c0", "match-1"],
       ["a28f4545-1443-4e7b-b456-1d1c1e65f9c0"],
       ["a28f4545-1443-4e7b-b456-1d1c1e65f9c0"],
+      ["a28f4545-1443-4e7b-b456-1d1c1e65f9c0", 3],
       ["a28f4545-1443-4e7b-b456-1d1c1e65f9c0", "first_death", 2],
       ["a28f4545-1443-4e7b-b456-1d1c1e65f9c0", "match-1", 1]
     ]);

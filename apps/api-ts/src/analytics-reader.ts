@@ -24,6 +24,18 @@ export type MapPerformance = {
   kd: number; adr: number; acs: number; firstDeathRate: number;
 };
 export type MapPerformanceResult = { scope: AnalyticsScope; maps: MapPerformance[] };
+export type PeriodPerformance = {
+  matches: number; wins: number; losses: number; winRate: number;
+  kd: number; adr: number; acs: number; firstDeathRate: number;
+  periodStart: string; periodEnd: string;
+};
+export type RecentPeriodComparisonResult = {
+  scope: AnalyticsScope;
+  matchesPerPeriod: number;
+  recent: PeriodPerformance | null;
+  previous: PeriodPerformance | null;
+  deltas: Pick<PeriodPerformance, "winRate" | "kd" | "adr" | "acs" | "firstDeathRate"> | null;
+};
 export type RoundEvidenceResult = { scope: AnalyticsScope; evidence: RoundEvidence[] };
 
 export class AnalyticsReader {
@@ -279,6 +291,87 @@ export class AnalyticsReader {
       })
     };
   }
+
+  async compareRecentPeriods(userId: string, matchesPerPeriod: number): Promise<RecentPeriodComparisonResult> {
+    const result = await this.pool.query<{
+      game_start_millis: string; won: boolean; kills: string; deaths: string; score: string;
+      rounds_played: string; damage: string; first_deaths: string;
+    }>(
+      `SELECT matches.game_start_millis,
+        COUNT(rounds.round_number) FILTER (WHERE rounds.winning_team = stats.team_id) >
+          COUNT(rounds.round_number) FILTER (WHERE rounds.winning_team <> stats.team_id) AS won,
+        stats.kills, stats.deaths, stats.score, stats.rounds_played,
+        COALESCE(damage.damage, 0) AS damage, COALESCE(first_deaths.count, 0) AS first_deaths
+      FROM riot_accounts accounts
+      JOIN player_match_stats stats ON stats.riot_account_id = accounts.id
+      JOIN matches ON matches.match_id = stats.match_id
+      LEFT JOIN match_rounds rounds ON rounds.match_id = matches.match_id
+      LEFT JOIN LATERAL (SELECT SUM(rd.damage) AS damage FROM round_damage rd
+        WHERE rd.match_id = stats.match_id AND rd.riot_account_id = accounts.id) damage ON TRUE
+      LEFT JOIN LATERAL (SELECT COUNT(*) AS count FROM round_kills rk WHERE rk.match_id = stats.match_id
+        AND rk.riot_account_id = accounts.id AND rk.is_first_death = TRUE) first_deaths ON TRUE
+      WHERE accounts.user_id = $1 AND matches.queue_id = $2
+        AND matches.is_ranked = TRUE AND matches.is_completed = TRUE
+      GROUP BY matches.match_id, stats.team_id, stats.kills, stats.deaths, stats.score, stats.rounds_played,
+        damage.damage, first_deaths.count
+      ORDER BY matches.game_start_millis DESC NULLS LAST, matches.match_id
+      LIMIT $3`,
+      [userId, COMPETITIVE_QUEUE_ID, matchesPerPeriod * 2]
+    );
+    const recentRows = result.rows.slice(0, matchesPerPeriod);
+    const previousRows = result.rows.slice(matchesPerPeriod, matchesPerPeriod * 2);
+    const recent = aggregatePeriod(recentRows);
+    const previous = aggregatePeriod(previousRows);
+    const timestamps = result.rows.map((row) => Number(row.game_start_millis));
+    const scope = makeScope(result.rows.length, timestamps.length ? String(Math.min(...timestamps)) : null, timestamps.length ? String(Math.max(...timestamps)) : null);
+    if (result.rows.length > 0 && previousRows.length < matchesPerPeriod) {
+      scope.limitation = `Only ${result.rows.length} completed competitive matches are available; a full ${matchesPerPeriod}-match versus ${matchesPerPeriod}-match comparison is not possible.`;
+    }
+    return {
+      scope,
+      matchesPerPeriod,
+      recent,
+      previous,
+      deltas: recent && previous ? {
+        winRate: difference(recent.winRate, previous.winRate),
+        kd: difference(recent.kd, previous.kd),
+        adr: difference(recent.adr, previous.adr),
+        acs: difference(recent.acs, previous.acs),
+        firstDeathRate: difference(recent.firstDeathRate, previous.firstDeathRate)
+      } : null
+    };
+  }
+}
+
+function aggregatePeriod(rows: Array<{
+  game_start_millis: string; won: boolean; kills: string; deaths: string; score: string;
+  rounds_played: string; damage: string; first_deaths: string;
+}>): PeriodPerformance | null {
+  if (!rows.length) return null;
+  const total = (field: "kills" | "deaths" | "score" | "rounds_played" | "damage" | "first_deaths") =>
+    rows.reduce((sum, row) => sum + Number(row[field]), 0);
+  const metrics = calculatePlayerMetrics({
+    score: total("score"), roundsPlayed: total("rounds_played"), kills: total("kills"), deaths: total("deaths"),
+    totalDamage: total("damage"), headshots: 0, bodyshots: 0, legshots: 0, firstDeaths: total("first_deaths")
+  });
+  const wins = rows.filter((row) => row.won).length;
+  const timestamps = rows.map((row) => Number(row.game_start_millis));
+  return {
+    matches: rows.length,
+    wins,
+    losses: rows.length - wins,
+    winRate: percentage(wins, rows.length),
+    kd: metrics.kd,
+    adr: metrics.adr,
+    acs: metrics.acs,
+    firstDeathRate: metrics.firstDeathRate,
+    periodStart: new Date(Math.min(...timestamps)).toISOString(),
+    periodEnd: new Date(Math.max(...timestamps)).toISOString()
+  };
+}
+
+function difference(current: number, previous: number): number {
+  return Math.round((current - previous) * 100) / 100;
 }
 
 function percentage(won: number, played: number): number {

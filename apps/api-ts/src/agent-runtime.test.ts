@@ -9,6 +9,7 @@ const reader = {
   getMatchDetail: async () => ({ scope: { queue: "competitive" as const, sampleSize: 0 }, match: null }),
   compareAttackDefense: async () => ({ scope: { queue: "competitive" as const, sampleSize: 0 }, attack: { roundsPlayed: 0, roundsWon: 0, winRate: 0 }, defense: { roundsPlayed: 0, roundsWon: 0, winRate: 0 } }),
   compareMapPerformance: async () => ({ scope: { queue: "competitive" as const, sampleSize: 0 }, maps: [] }),
+  compareRecentPeriods: async () => ({ scope: { queue: "competitive" as const, sampleSize: 0 }, matchesPerPeriod: 3, recent: null, previous: null, deltas: null }),
   findRoundEvidence: async () => ({ scope: { queue: "competitive" as const, sampleSize: 0 }, evidence: [] }),
   getRoundEvidence: async () => ({ scope: { queue: "competitive" as const, sampleSize: 0 }, evidence: [] })
 };

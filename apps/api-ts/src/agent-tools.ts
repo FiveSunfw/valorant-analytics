@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { AnalyticsReader, AttackDefenseResult, MapPerformanceResult, MatchDetailResult, MatchList, PlayerSummary, RoundEvidenceResult } from "./analytics-reader.js";
+import type { AnalyticsReader, AttackDefenseResult, MapPerformanceResult, MatchDetailResult, MatchList, PlayerSummary, RecentPeriodComparisonResult, RoundEvidenceResult } from "./analytics-reader.js";
 import { analysisAnswerSchema, type AuthenticatedUser } from "./agent-contracts.js";
 export { analysisAnswerSchema } from "./agent-contracts.js";
 
@@ -14,6 +14,7 @@ export type AnalyticsTool<Input, Output> = {
 const emptyInputSchema = z.object({}).strict();
 const matchListInputSchema = z.object({ limit: z.number().int().min(1).max(10).default(5) }).strict();
 const matchDetailInputSchema = z.object({ matchId: z.string().min(1) }).strict();
+const recentPeriodInputSchema = z.object({ matchesPerPeriod: z.number().int().min(2).max(5).default(3) }).strict();
 const roundEvidenceInputSchema = z.object({
   matchId: z.string().min(1),
   roundNumber: z.number().int().min(1)
@@ -27,13 +28,14 @@ export type { AnalysisAnswer } from "./agent-contracts.js";
 
 export function createAnalyticsTools(
   user: AuthenticatedUser,
-  reader: Pick<AnalyticsReader, "getPlayerSummary" | "getMatchList" | "getMatchDetail" | "compareAttackDefense" | "compareMapPerformance" | "getRoundEvidence" | "findRoundEvidence">
+  reader: Pick<AnalyticsReader, "getPlayerSummary" | "getMatchList" | "getMatchDetail" | "compareAttackDefense" | "compareMapPerformance" | "compareRecentPeriods" | "getRoundEvidence" | "findRoundEvidence">
 ): readonly [
   AnalyticsTool<Record<string, never>, PlayerSummary>,
   AnalyticsTool<{ limit: number }, MatchList>,
   AnalyticsTool<{ matchId: string }, MatchDetailResult>,
   AnalyticsTool<Record<string, never>, AttackDefenseResult>,
   AnalyticsTool<Record<string, never>, MapPerformanceResult>,
+  AnalyticsTool<{ matchesPerPeriod: number }, RecentPeriodComparisonResult>,
   AnalyticsTool<{ eventType: "first_death"; limit: number }, RoundEvidenceResult>,
   AnalyticsTool<{ matchId: string; roundNumber: number }, RoundEvidenceResult>
 ] {
@@ -77,6 +79,17 @@ export function createAnalyticsTools(
       inputSchema: emptyInputSchema,
       modelSchema: { type: "object", properties: {}, additionalProperties: false },
       execute: () => reader.compareMapPerformance(user.userId)
+    },
+    {
+      name: "compare_recent_periods",
+      description: "Compare the authenticated player's latest competitive matches with the immediately preceding matches using deterministic performance metrics.",
+      inputSchema: recentPeriodInputSchema,
+      modelSchema: {
+        type: "object",
+        properties: { matchesPerPeriod: { type: "integer", minimum: 2, maximum: 5, default: 3 } },
+        additionalProperties: false
+      },
+      execute: ({ matchesPerPeriod }: { matchesPerPeriod: number }) => reader.compareRecentPeriods(user.userId, matchesPerPeriod)
     },
     {
       name: "find_round_evidence",
