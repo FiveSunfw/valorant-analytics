@@ -13,6 +13,10 @@ export type PlayerSummary = { scope: AnalyticsScope; metrics: PlayerMetrics | nu
 export type RoundEvidence = { matchId: string; roundNumber: number; eventType: "first_death" | "death" | "kill" | "assist"; description: string };
 export type MatchSummary = { matchId: string; mapName: string; playedAt: string; result: "win" | "loss" };
 export type MatchList = { scope: AnalyticsScope; matches: MatchSummary[] };
+export type MatchDetailResult = {
+  scope: AnalyticsScope;
+  match: (MatchSummary & { roundsWon: number; roundsLost: number; kills: number; deaths: number; assists: number; metrics: PlayerMetrics }) | null;
+};
 export type RoundEvidenceResult = { scope: AnalyticsScope; evidence: RoundEvidence[] };
 
 export class AnalyticsReader {
@@ -122,6 +126,59 @@ export class AnalyticsReader {
         playedAt: row.game_start_millis ? new Date(Number(row.game_start_millis)).toISOString() : "Unknown time",
         result: Number(row.wins) > Number(row.losses) ? "win" : "loss"
       }))
+    };
+  }
+
+  async getMatchDetail(userId: string, matchId: string): Promise<MatchDetailResult> {
+    const result = await this.pool.query<{
+      match_id: string; map_id: string | null; game_start_millis: string | null; team_id: string | null;
+      score: string; rounds_played: string; kills: string; deaths: string; assists: string;
+      rounds_won: string; rounds_lost: string; damage: string; headshots: string; bodyshots: string; legshots: string; first_deaths: string;
+    }>(
+      `SELECT matches.match_id, matches.map_id, matches.game_start_millis, stats.team_id, stats.score,
+        stats.rounds_played, stats.kills, stats.deaths, stats.assists,
+        COUNT(DISTINCT rounds.round_number) FILTER (WHERE rounds.winning_team = stats.team_id) AS rounds_won,
+        COUNT(DISTINCT rounds.round_number) FILTER (WHERE rounds.winning_team <> stats.team_id) AS rounds_lost,
+        COALESCE(damage.damage, 0) AS damage, COALESCE(damage.headshots, 0) AS headshots,
+        COALESCE(damage.bodyshots, 0) AS bodyshots, COALESCE(damage.legshots, 0) AS legshots,
+        COALESCE(first_deaths.count, 0) AS first_deaths
+       FROM riot_accounts accounts
+       JOIN player_match_stats stats ON stats.riot_account_id = accounts.id
+       JOIN matches ON matches.match_id = stats.match_id
+       LEFT JOIN match_rounds rounds ON rounds.match_id = matches.match_id
+       LEFT JOIN LATERAL (SELECT SUM(rd.damage) AS damage, SUM(rd.headshots) AS headshots,
+         SUM(rd.bodyshots) AS bodyshots, SUM(rd.legshots) AS legshots FROM round_damage rd
+         WHERE rd.match_id = stats.match_id AND rd.riot_account_id = accounts.id) damage ON TRUE
+       LEFT JOIN LATERAL (SELECT COUNT(*) AS count FROM round_kills rk WHERE rk.match_id = stats.match_id
+         AND rk.riot_account_id = accounts.id AND rk.is_first_death = TRUE) first_deaths ON TRUE
+       WHERE accounts.user_id = $1 AND matches.match_id = $2 AND matches.queue_id = $3
+         AND matches.is_ranked = TRUE AND matches.is_completed = TRUE
+       GROUP BY matches.match_id, stats.team_id, stats.score, stats.rounds_played, stats.kills, stats.deaths,
+         stats.assists, damage.damage, damage.headshots, damage.bodyshots, damage.legshots, first_deaths.count`,
+      [userId, matchId, COMPETITIVE_QUEUE_ID]
+    );
+    const row = result.rows[0];
+    if (!row) return { scope: makeScope(0, null, null), match: null };
+    const roundsWon = Number(row.rounds_won);
+    const roundsLost = Number(row.rounds_lost);
+    return {
+      scope: makeScope(1, row.game_start_millis, row.game_start_millis),
+      match: {
+        matchId: row.match_id,
+        mapName: row.map_id ?? "Unknown map",
+        playedAt: row.game_start_millis ? new Date(Number(row.game_start_millis)).toISOString() : "Unknown time",
+        result: roundsWon > roundsLost ? "win" : "loss",
+        roundsWon,
+        roundsLost,
+        kills: Number(row.kills),
+        deaths: Number(row.deaths),
+        assists: Number(row.assists),
+        metrics: calculatePlayerMetrics({
+          score: Number(row.score), roundsPlayed: Number(row.rounds_played), kills: Number(row.kills), deaths: Number(row.deaths),
+          totalDamage: Number(row.damage), headshots: Number(row.headshots), bodyshots: Number(row.bodyshots),
+          legshots: Number(row.legshots), firstDeaths: Number(row.first_deaths)
+        })
+      }
     };
   }
 }

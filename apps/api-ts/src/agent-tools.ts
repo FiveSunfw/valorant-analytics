@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { AnalyticsReader, MatchList, PlayerSummary, RoundEvidenceResult } from "./analytics-reader.js";
+import type { AnalyticsReader, MatchDetailResult, MatchList, PlayerSummary, RoundEvidenceResult } from "./analytics-reader.js";
 import { analysisAnswerSchema, type AuthenticatedUser } from "./agent-contracts.js";
 export { analysisAnswerSchema } from "./agent-contracts.js";
 
@@ -13,6 +13,7 @@ export type AnalyticsTool<Input, Output> = {
 
 const emptyInputSchema = z.object({}).strict();
 const matchListInputSchema = z.object({ limit: z.number().int().min(1).max(10).default(5) }).strict();
+const matchDetailInputSchema = z.object({ matchId: z.string().min(1) }).strict();
 const roundEvidenceInputSchema = z.object({
   matchId: z.string().min(1),
   roundNumber: z.number().int().min(1)
@@ -26,10 +27,11 @@ export type { AnalysisAnswer } from "./agent-contracts.js";
 
 export function createAnalyticsTools(
   user: AuthenticatedUser,
-  reader: Pick<AnalyticsReader, "getPlayerSummary" | "getMatchList" | "getRoundEvidence" | "findRoundEvidence">
+  reader: Pick<AnalyticsReader, "getPlayerSummary" | "getMatchList" | "getMatchDetail" | "getRoundEvidence" | "findRoundEvidence">
 ): readonly [
   AnalyticsTool<Record<string, never>, PlayerSummary>,
   AnalyticsTool<{ limit: number }, MatchList>,
+  AnalyticsTool<{ matchId: string }, MatchDetailResult>,
   AnalyticsTool<{ eventType: "first_death"; limit: number }, RoundEvidenceResult>,
   AnalyticsTool<{ matchId: string; roundNumber: number }, RoundEvidenceResult>
 ] {
@@ -47,6 +49,18 @@ export function createAnalyticsTools(
       inputSchema: matchListInputSchema,
       modelSchema: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 10 } }, additionalProperties: false },
       execute: ({ limit }: { limit: number }) => reader.getMatchList(user.userId, limit)
+    },
+    {
+      name: "get_match_detail",
+      description: "Read one owned completed competitive match with scoreline, combat totals, and deterministic metrics.",
+      inputSchema: matchDetailInputSchema,
+      modelSchema: {
+        type: "object",
+        properties: { matchId: { type: "string", minLength: 1 } },
+        required: ["matchId"],
+        additionalProperties: false
+      },
+      execute: ({ matchId }: { matchId: string }) => reader.getMatchDetail(user.userId, matchId)
     },
     {
       name: "find_round_evidence",

@@ -6,6 +6,7 @@ const user = { userId: "user-1" };
 const reader = {
   getPlayerSummary: async () => ({ scope: { queue: "competitive" as const, sampleSize: 5 }, metrics: { adr: 120, firstDeathRate: 20 } as any }),
   getMatchList: async () => ({ scope: { queue: "competitive" as const, sampleSize: 0 }, matches: [] }),
+  getMatchDetail: async () => ({ scope: { queue: "competitive" as const, sampleSize: 0 }, match: null }),
   findRoundEvidence: async () => ({ scope: { queue: "competitive" as const, sampleSize: 0 }, evidence: [] }),
   getRoundEvidence: async () => ({ scope: { queue: "competitive" as const, sampleSize: 0 }, evidence: [] })
 };
