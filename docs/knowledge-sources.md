@@ -11,10 +11,10 @@
 
 许可凭据当前登记为“用户确认”，不是平台或作者的独立书面授权证明。若公开发布前无法核验截图许可，应将对应 `knowledge_sources.status` 和 `knowledge_chunks.review_status` 改为 `pending`，不进入检索。
 
-首批检索文本是自写的地图通用教学背景；它不能证明玩家在某回合的站位、操作或意图。点位级文案、截图文件和逐条视频时间戳需由编辑人员观看原视频后补录，补录前不得将其当作已核验的细节。
+首批检索文本是自写的地图通用教学背景；它不能证明玩家在某回合的站位、操作或意图。点位级文案和截图文件需由编辑人员观看原视频后补录，补录前不得将其当作已核验的细节。视频时间戳仅作为可选的快速定位信息，不是知识点进入检索的必要条件。
 
 ## 字幕检查器
 
-`apps/api-ts/src/knowledge-import.ts` 参考了 [moonmoonCL/bilibili-transcript](https://github.com/moonmoonCL/bilibili-transcript) 的 `yt-dlp` 优先、读取已有 AI 字幕的做法，并采用本项目更严格的边界：只接受上面四条已登记来源，使用 `--skip-download` 和 `--ignore-config`，不接收 Cookie，不把视频、字幕文件或完整转录写入 PostgreSQL。运行 `npm run knowledge:inspect --workspace=@valorant/api -- bili-haven-defense` 时，字幕只在当前进程内供编辑人员核对；最终仍须人工改写成带地图、攻守、条件和时间戳的知识点后，才能进入审核流程。
+`apps/api-ts/src/knowledge-import.ts` 参考了 [moonmoonCL/bilibili-transcript](https://github.com/moonmoonCL/bilibili-transcript) 的 `yt-dlp` 优先、读取已有 AI 字幕的做法，并采用本项目更严格的边界：只接受上面四条已登记来源，使用 `--skip-download` 和 `--ignore-config`，不接收 Cookie，不把视频、字幕文件或完整转录写入 PostgreSQL。运行 `npm run knowledge:inspect --workspace=@valorant/api -- bili-haven-defense` 时，字幕只在当前进程内供编辑人员核对；最终仍须人工改写成带地图、攻守和适用条件的知识点，截图作为主要审核证据，时间戳可选。
 
 该 GitHub 项目只适合作为提取策略参考：它依赖视频已有的 Bilibili AI 字幕，字幕不存在时不能替代人工观看或授权的语音转写。本仓库不引入 Whisper、视频下载或外部向量数据库。

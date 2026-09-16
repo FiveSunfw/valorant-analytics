@@ -190,7 +190,7 @@ export async function inspectVideoTranscript(
       ok: true,
       source,
       segments,
-      notice: "字幕只在本次进程内使用；请人工核对后保存自写知识点，原始视频和完整转录不会写入知识库。"
+      notice: "字幕只在本次进程内使用；请人工核对后保存自写知识点，截图是主要审核证据，时间戳可选，原始视频和完整转录不会写入知识库。"
     };
   } finally {
     await rm(directory, { recursive: true, force: true });
