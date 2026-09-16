@@ -20,7 +20,6 @@ design-qa.md
 AGENTS.md
 HANDOFF.md
 docs/
-apps/web/
 apps/worker/
 apps/worker-ts/
 apps/migrate-ts/
