@@ -122,6 +122,14 @@ export function buildApp(dependencies: RuntimeDependencies = {
     });
     return reply.send(result);
   });
+  app.get("/agent/runs/:runId", async (request, reply) => {
+    const session = await oauth.getSession(readCookie(request.headers.cookie, SESSION_COOKIE));
+    if (!session) throw new RiotOAuthError("authorization", 401, "A valid product session is required");
+    if (!agentTrace || !(agentTrace instanceof PostgresAgentTraceSink)) return reply.code(404).send({ error: "not_found", message: "Run trace is unavailable" });
+    const run = await agentTrace.findForUser((request.params as { runId: string }).runId, session.userId);
+    if (!run) return reply.code(404).send({ error: "not_found", message: "Run trace was not found" });
+    return reply.send(run);
+  });
   app.setErrorHandler((error, request, reply) => {
     request.log.error({ err: error }, "Request failed");
     if (error instanceof RiotOAuthError) return reply.code(error.statusCode).send({ error: error.kind, message: error.message });

@@ -21,6 +21,12 @@ export interface AgentTraceSink {
   save(record: AgentTraceRecord): Promise<void>;
 }
 
+export type PublicAgentRun = {
+  runId: string; status: string; errorCode: string | null; errorMessage: string | null;
+  steps: number; toolNames: string[]; usage: { inputTokens: number | null; outputTokens: number | null; totalTokens: number | null; estimatedCostUsd: number | null };
+  answer: AnalysisAnswer | null; createdAt: string;
+};
+
 export class PostgresAgentTraceSink implements AgentTraceSink {
   constructor(private readonly pool: Pool) {}
 
@@ -34,5 +40,12 @@ export class PostgresAgentTraceSink implements AgentTraceSink {
         record.prompt.hash, record.modelProvider, JSON.stringify(record.toolCalls),
         JSON.stringify(record.answer), record.status, record.latencyMs, record.errorCode ?? null, record.errorMessage ?? null, record.steps, record.usage.inputTokens, record.usage.outputTokens, record.usage.totalTokens, record.usage.estimatedCostUsd]
     );
+  }
+
+  async findForUser(runId: string, userId: string): Promise<PublicAgentRun | null> {
+    const result = await this.pool.query(`SELECT run_id, status, error_code, error_message, steps, tool_calls, input_tokens, output_tokens, total_tokens, estimated_cost_usd, answer, created_at FROM agent_runs WHERE run_id = $1 AND user_id = $2`, [runId, userId]);
+    const row = result.rows[0];
+    if (!row) return null;
+    return { runId: row.run_id, status: row.status, errorCode: row.error_code, errorMessage: row.error_message, steps: row.steps, toolNames: row.tool_calls.map((call: { toolName: string }) => call.toolName), usage: { inputTokens: row.input_tokens, outputTokens: row.output_tokens, totalTokens: row.total_tokens, estimatedCostUsd: row.estimated_cost_usd === null ? null : Number(row.estimated_cost_usd) }, answer: row.answer, createdAt: row.created_at.toISOString() };
   }
 }
