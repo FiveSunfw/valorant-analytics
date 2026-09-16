@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "buildCommand": "npm run build --workspace=@valorant/config && npm run build --workspace=@valorant/domain",
+  "outputDirectory": "api",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/api"
+    }
+  ]
+}
