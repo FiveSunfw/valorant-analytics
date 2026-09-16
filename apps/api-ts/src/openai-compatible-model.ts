@@ -35,6 +35,8 @@ Each playerEvidence item must contain claim plus either metricName or both match
           + "\nFor questions comparing attack and defense or 进攻 and 防守: call compare_attack_defense before returning the final JSON."
           + "\nFor questions about map performance or 地图表现: call compare_map_performance, then call get_map_round_summary for the map being diagnosed before returning the final JSON. Use returned rounds to identify the side or first-death pattern; never ask the player to perform this diagnosis."
           + "\nFor questions about recent trends, improvement, decline, 最近状态, 变好, or 变差: call compare_recent_periods before returning the final JSON."
+          + "\nFor questions about same-tier comparison, rank benchmark, 同段位, or 基准: call get_rank_benchmark. Only use it when its available flag is true."
+          + "\nFor questions about training goals, saved summaries, or what to remember: call get_training_memory. Treat returned memory as user context, never as match evidence."
           + "\nFor a general summary, small-sample limitation, or no-data question: call only get_player_summary. Do not call trend, map, attack-defense, or match-detail tools unless the user explicitly asks for that comparison."
           + "\nIf get_player_summary reports metrics null, sampleSize 0, or fewer than 5 matches, confidence MUST be low. State the sample limitation; do not express high confidence merely because the absence of data is certain."
           + "\nFor a review of the latest match: call get_match_list first, then get_match_detail for that match. Do not call get_player_summary."

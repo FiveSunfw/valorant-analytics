@@ -64,6 +64,35 @@ const migrations = [{
     "ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS total_tokens INTEGER",
     "ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS estimated_cost_usd NUMERIC(12,8)"
   ]
+}, {
+  id: "20260916_0007",
+  statements: [
+    `CREATE TABLE IF NOT EXISTS sync_jobs (
+      job_id UUID PRIMARY KEY,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      riot_account_id UUID NOT NULL REFERENCES riot_accounts(id) ON DELETE CASCADE,
+      status VARCHAR(32) NOT NULL,
+      imported INTEGER NOT NULL DEFAULT 0,
+      skipped INTEGER NOT NULL DEFAULT 0,
+      failed_match_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+      error_code VARCHAR(64),
+      error_message TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      completed_at TIMESTAMPTZ
+    )`,
+    "CREATE INDEX IF NOT EXISTS ix_sync_jobs_user_created_at ON sync_jobs (user_id, created_at DESC)",
+    `CREATE TABLE IF NOT EXISTS training_memories (
+      id UUID PRIMARY KEY,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      kind VARCHAR(32) NOT NULL,
+      content TEXT NOT NULL,
+      source_run_id UUID REFERENCES agent_runs(run_id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )`,
+    "CREATE INDEX IF NOT EXISTS ix_training_memories_user_updated_at ON training_memories (user_id, updated_at DESC)"
+  ]
 }];
 
 export async function migrate(pool: SqlExecutor): Promise<void> {

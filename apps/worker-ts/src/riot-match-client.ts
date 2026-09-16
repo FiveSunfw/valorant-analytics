@@ -2,12 +2,14 @@ import { z } from "zod";
 import { COMPETITIVE_QUEUE_ID, isCompletedCompetitiveMatch, rawMatchSchema, type RawMatch } from "@valorant/domain";
 import { riotApiKey, riotPlatform } from "./config.js";
 
-const matchHistorySchema = z.object({
-  history: z.array(z.object({
+const matchHistoryEntrySchema = z.object({
     matchId: z.string().min(1),
     queueId: z.string().optional()
-  })).default([])
 });
+const matchHistorySchema = z.union([
+  z.array(matchHistoryEntrySchema),
+  z.object({ history: z.array(matchHistoryEntrySchema).default([]) })
+]);
 
 export type RiotErrorCategory = "configuration" | "network" | "rate-limit" | "upstream" | "rejected" | "invalid-response";
 
@@ -38,6 +40,7 @@ export type CompetitiveMatchFetch = {
   matches: RawMatch[];
   failedMatchIds: string[];
 };
+type MatchHistory = { history: Array<{ matchId: string; queueId?: string }> };
 
 export class RiotMatchClient {
   private readonly baseUrl: string;
@@ -61,11 +64,11 @@ export class RiotMatchClient {
     return new RiotMatchClient({ apiKey: riotApiKey, platform: riotPlatform });
   }
 
-  async getMatchHistory(puuid: string): Promise<z.infer<typeof matchHistorySchema>> {
+  async getMatchHistory(puuid: string): Promise<MatchHistory> {
     const payload = await this.getJson(`/val/match/v1/matchlists/by-puuid/${encodeURIComponent(puuid)}`);
     const parsed = matchHistorySchema.safeParse(payload);
     if (!parsed.success) throw new RiotMatchApiError("invalid-response", 502, "Riot Match API returned an invalid match history");
-    return { history: parsed.data.history ?? [] };
+    return { history: Array.isArray(parsed.data) ? parsed.data : parsed.data.history };
   }
 
   async getMatch(matchId: string): Promise<RawMatch> {

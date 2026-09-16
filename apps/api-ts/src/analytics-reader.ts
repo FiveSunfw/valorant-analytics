@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import { COMPETITIVE_QUEUE_ID, calculatePlayerMetrics, type PlayerMetrics } from "@valorant/domain";
 
@@ -39,9 +40,139 @@ export type RecentPeriodComparisonResult = {
   deltas: Pick<PeriodPerformance, "winRate" | "kd" | "adr" | "acs" | "firstDeathRate"> | null;
 };
 export type RoundEvidenceResult = { scope: AnalyticsScope; evidence: RoundEvidence[] };
+export type SyncJobStatus = "queued" | "running" | "completed" | "failed";
+export type SyncJob = {
+  jobId: string; status: SyncJobStatus; imported: number; skipped: number;
+  failedMatchIds: string[]; errorCode?: string; errorMessage?: string;
+  createdAt: string; updatedAt: string; completedAt?: string;
+};
+export type TrainingMemory = {
+  id: string; kind: "goal" | "summary"; content: string; sourceRunId?: string;
+  createdAt: string; updatedAt: string;
+};
+export type RankBenchmark = {
+  available: boolean; tier: number | null; cohortPlayers: number; minimumPlayers: number;
+  player: PlayerMetrics | null;
+  median: Pick<PlayerMetrics, "kd" | "adr" | "acs" | "firstDeathRate"> | null;
+  limitation?: string;
+};
 
 export class AnalyticsReader {
   constructor(private readonly pool: Pool) {}
+
+  async getRiotAccountId(userId: string): Promise<string | null> {
+    const result = await this.pool.query<{ id: string }>("SELECT id FROM riot_accounts WHERE user_id = $1 LIMIT 1", [userId]);
+    return result.rows[0]?.id ?? null;
+  }
+
+  async findActiveSyncJob(userId: string): Promise<SyncJob | null> {
+    const result = await this.pool.query<SyncJobRow>(
+      "SELECT * FROM sync_jobs WHERE user_id = $1 AND status IN ('queued', 'running') ORDER BY created_at DESC LIMIT 1", [userId]
+    );
+    return result.rows[0] ? toSyncJob(result.rows[0]) : null;
+  }
+
+  async createSyncJob(jobId: string, userId: string, riotAccountId: string): Promise<SyncJob> {
+    const result = await this.pool.query<SyncJobRow>(
+      `INSERT INTO sync_jobs (job_id, user_id, riot_account_id, status)
+       VALUES ($1, $2, $3, 'queued') RETURNING *`, [jobId, userId, riotAccountId]
+    );
+    return toSyncJob(result.rows[0]);
+  }
+
+  async getSyncJob(userId: string, jobId: string): Promise<SyncJob | null> {
+    const result = await this.pool.query<SyncJobRow>("SELECT * FROM sync_jobs WHERE user_id = $1 AND job_id = $2", [userId, jobId]);
+    return result.rows[0] ? toSyncJob(result.rows[0]) : null;
+  }
+
+  async updateSyncJob(jobId: string, patch: {
+    status: SyncJobStatus; imported?: number; skipped?: number; failedMatchIds?: string[];
+    errorCode?: string | null; errorMessage?: string | null; completed?: boolean;
+  }): Promise<void> {
+    await this.pool.query(
+      `UPDATE sync_jobs SET status = $2, imported = COALESCE($3, imported), skipped = COALESCE($4, skipped),
+        failed_match_ids = COALESCE($5::jsonb, failed_match_ids), error_code = $6,
+        error_message = $7, updated_at = now(), completed_at = CASE WHEN $8 THEN now() ELSE completed_at END
+       WHERE job_id = $1`,
+      [jobId, patch.status, patch.imported ?? null, patch.skipped ?? null,
+        patch.failedMatchIds ? JSON.stringify(patch.failedMatchIds) : null, patch.errorCode ?? null,
+        patch.errorMessage ?? null, patch.completed ?? false]
+    );
+  }
+
+  async getTrainingMemories(userId: string): Promise<TrainingMemory[]> {
+    const result = await this.pool.query<MemoryRow>(
+      "SELECT id, kind, content, source_run_id, created_at, updated_at FROM training_memories WHERE user_id = $1 ORDER BY updated_at DESC", [userId]
+    );
+    return result.rows.map(toTrainingMemory);
+  }
+
+  async createTrainingMemory(userId: string, kind: "goal" | "summary", content: string, sourceRunId?: string): Promise<TrainingMemory> {
+    const result = await this.pool.query<MemoryRow>(
+      `INSERT INTO training_memories (id, user_id, kind, content, source_run_id)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id, kind, content, source_run_id, created_at, updated_at`,
+      [randomUUID(), userId, kind, content, sourceRunId ?? null]
+    );
+    return toTrainingMemory(result.rows[0]);
+  }
+
+  async updateTrainingMemory(userId: string, id: string, kind: "goal" | "summary", content: string): Promise<TrainingMemory | null> {
+    const result = await this.pool.query<MemoryRow>(
+      `UPDATE training_memories SET kind = $3, content = $4, updated_at = now()
+       WHERE user_id = $1 AND id = $2
+       RETURNING id, kind, content, source_run_id, created_at, updated_at`, [userId, id, kind, content]
+    );
+    return result.rows[0] ? toTrainingMemory(result.rows[0]) : null;
+  }
+
+  async deleteTrainingMemory(userId: string, id: string): Promise<boolean> {
+    const result = await this.pool.query("DELETE FROM training_memories WHERE user_id = $1 AND id = $2", [userId, id]);
+    return result.rowCount === 1;
+  }
+
+  async getTrainingMemory(userId: string): Promise<{ memories: TrainingMemory[]; limitation: string }> {
+    return { memories: await this.getTrainingMemories(userId), limitation: "Training memory is user-provided context, not match evidence." };
+  }
+
+  async getRankBenchmark(userId: string): Promise<RankBenchmark> {
+    const tierResult = await this.pool.query<{ competitive_tier: number | null }>(
+      `SELECT stats.competitive_tier FROM riot_accounts accounts
+       JOIN player_match_stats stats ON stats.riot_account_id = accounts.id
+       JOIN matches ON matches.match_id = stats.match_id
+       WHERE accounts.user_id = $1 AND matches.queue_id = $2 AND matches.is_ranked = TRUE AND matches.is_completed = TRUE
+       ORDER BY matches.game_start_millis DESC NULLS LAST LIMIT 1`, [userId, COMPETITIVE_QUEUE_ID]
+    );
+    const tier = tierResult.rows[0]?.competitive_tier ?? null;
+    const minimumPlayers = 5;
+    if (tier === null) return { available: false, tier, cohortPlayers: 0, minimumPlayers, player: null, median: null, limitation: "No competitive tier is available for the current account." };
+    const cohort = await this.pool.query<{ cohort_players: string; kd: number | null; adr: number | null; acs: number | null; first_death_rate: number | null }>(
+      `WITH per_user AS (
+        SELECT accounts.user_id, COUNT(DISTINCT stats.match_id) AS matches,
+          MAX(stats.competitive_tier) AS tier,
+          SUM(stats.kills)::numeric / NULLIF(SUM(stats.deaths), 0) AS kd,
+          SUM(COALESCE(damage.damage, 0))::numeric / NULLIF(SUM(stats.rounds_played), 0) AS adr,
+          SUM(stats.score)::numeric / NULLIF(SUM(stats.rounds_played), 0) AS acs,
+          SUM(COALESCE(first_deaths.count, 0))::numeric / NULLIF(SUM(stats.rounds_played), 0) * 100 AS first_death_rate
+        FROM riot_accounts accounts JOIN player_match_stats stats ON stats.riot_account_id = accounts.id
+        JOIN matches ON matches.match_id = stats.match_id
+        LEFT JOIN LATERAL (SELECT SUM(rd.damage) AS damage FROM round_damage rd WHERE rd.match_id = stats.match_id AND rd.riot_account_id = accounts.id) damage ON TRUE
+        LEFT JOIN LATERAL (SELECT COUNT(*) AS count FROM round_kills rk WHERE rk.match_id = stats.match_id AND rk.riot_account_id = accounts.id AND rk.is_first_death = TRUE) first_deaths ON TRUE
+        WHERE matches.queue_id = $1 AND matches.is_ranked = TRUE AND matches.is_completed = TRUE
+        GROUP BY accounts.user_id
+      )
+      SELECT COUNT(*) FILTER (WHERE matches >= $3 AND tier = $2) AS cohort_players,
+        percentile_cont(0.5) WITHIN GROUP (ORDER BY kd) FILTER (WHERE matches >= $3 AND tier = $2) AS kd,
+        percentile_cont(0.5) WITHIN GROUP (ORDER BY adr) FILTER (WHERE matches >= $3 AND tier = $2) AS adr,
+        percentile_cont(0.5) WITHIN GROUP (ORDER BY acs) FILTER (WHERE matches >= $3 AND tier = $2) AS acs,
+        percentile_cont(0.5) WITHIN GROUP (ORDER BY first_death_rate) FILTER (WHERE matches >= $3 AND tier = $2) AS first_death_rate
+      FROM per_user`, [COMPETITIVE_QUEUE_ID, tier, minimumPlayers]
+    );
+    const row = cohort.rows[0];
+    const cohortPlayers = Number(row?.cohort_players ?? 0);
+    const player = (await this.getPlayerSummary(userId)).metrics;
+    if (cohortPlayers < minimumPlayers) return { available: false, tier, cohortPlayers, minimumPlayers, player, median: null, limitation: `Only ${cohortPlayers} eligible same-tier players are available; at least ${minimumPlayers} are required.` };
+    return { available: true, tier, cohortPlayers, minimumPlayers, player, median: { kd: Number(row.kd), adr: Number(row.adr), acs: Number(row.acs), firstDeathRate: Number(row.first_death_rate) } };
+  }
 
   async getPlayerSummary(userId: string): Promise<PlayerSummary> {
     const result = await this.pool.query<{
@@ -370,6 +501,52 @@ export class AnalyticsReader {
       } : null
     };
   }
+}
+
+type SyncJobRow = {
+  job_id: string; status: SyncJobStatus; imported: number | string; skipped: number | string;
+  failed_match_ids: unknown; error_code: string | null; error_message: string | null;
+  created_at: Date | string; updated_at: Date | string; completed_at: Date | string | null;
+};
+
+type MemoryRow = {
+  id: string; kind: "goal" | "summary"; content: string; source_run_id: string | null;
+  created_at: Date | string; updated_at: Date | string;
+};
+
+function asIso(value: Date | string | null | undefined): string | undefined {
+  return value == null ? undefined : new Date(value).toISOString();
+}
+
+function toSyncJob(row: SyncJobRow): SyncJob {
+  const failedMatchIds = Array.isArray(row.failed_match_ids)
+    ? row.failed_match_ids.map(String)
+    : typeof row.failed_match_ids === "string"
+      ? (JSON.parse(row.failed_match_ids) as unknown[]).map(String)
+      : [];
+  return {
+    jobId: row.job_id,
+    status: row.status,
+    imported: Number(row.imported),
+    skipped: Number(row.skipped),
+    failedMatchIds,
+    ...(row.error_code ? { errorCode: row.error_code } : {}),
+    ...(row.error_message ? { errorMessage: row.error_message } : {}),
+    createdAt: asIso(row.created_at)!,
+    updatedAt: asIso(row.updated_at)!,
+    ...(row.completed_at ? { completedAt: asIso(row.completed_at) } : {})
+  };
+}
+
+function toTrainingMemory(row: MemoryRow): TrainingMemory {
+  return {
+    id: row.id,
+    kind: row.kind,
+    content: row.content,
+    ...(row.source_run_id ? { sourceRunId: row.source_run_id } : {}),
+    createdAt: asIso(row.created_at)!,
+    updatedAt: asIso(row.updated_at)!
+  };
 }
 
 function aggregatePeriod(rows: Array<{

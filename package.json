@@ -4,7 +4,7 @@
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {
     "build": "npm run build --workspace=@valorant/config && npm run build --workspace=@valorant/domain && npm run build --workspace=@valorant/migrate && npm run build --workspace=@valorant/api && npm run build --workspace=@valorant/worker && npm run build --workspace=@valorant/web",
-    "check": "npm run build --workspace=@valorant/config && npm run typecheck --workspaces --if-present && npm run test --workspaces --if-present",
+    "check": "npm run build --workspace=@valorant/config && npm run build --workspace=@valorant/domain && npm run typecheck --workspaces --if-present && npm run test --workspaces --if-present",
     "typecheck": "npm run build --workspace=@valorant/config && npm run build --workspace=@valorant/domain && npm run typecheck --workspace=@valorant/migrate && npm run typecheck --workspace=@valorant/api && npm run typecheck --workspace=@valorant/worker && npm run typecheck --workspace=@valorant/web",
     "test": "npm run test --workspaces --if-present"
   },

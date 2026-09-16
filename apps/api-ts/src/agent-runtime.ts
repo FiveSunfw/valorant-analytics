@@ -174,6 +174,14 @@ export class DeterministicAnalysisModel implements AgentModel {
     if (!summary) return { decision: { kind: "tool_call", toolName: "get_player_summary", input: {} }, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 } };
     const data = summary.result as { scope?: { sampleSize?: number; limitation?: string }; metrics?: Record<string, number> | null };
     const metrics = data.metrics;
+    const asksAboutMemory = /(训练目标|训练计划|记住|长期记忆|上次分析|我的目标|memory)/i.test(request.userMessage);
+    if (asksAboutMemory && !request.observations.some((observation) => observation.toolName === "get_training_memory")) {
+      return { decision: { kind: "tool_call", toolName: "get_training_memory", input: {} }, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 } };
+    }
+    const asksAboutBenchmark = /(同段位|基准|benchmark|中位数)/i.test(request.userMessage);
+    if (asksAboutBenchmark && !request.observations.some((observation) => observation.toolName === "get_rank_benchmark")) {
+      return { decision: { kind: "tool_call", toolName: "get_rank_benchmark", input: {} }, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 } };
+    }
     if (!metrics) return { decision: { kind: "final", answer: {
       conclusion: "There is not enough completed competitive data to identify a stable trend yet.", playerEvidence: [], knowledgeEvidence: [], confidence: "low",
       recommendations: [{ action: "Play and sync more completed competitive matches", rationale: "The current data set has no usable player metrics." }],

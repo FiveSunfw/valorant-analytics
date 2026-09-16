@@ -1,6 +1,9 @@
 import Fastify from "fastify";
 import { Redis } from "ioredis";
 import { Pool } from "pg";
+import { randomUUID } from "node:crypto";
+import { z } from "zod";
+import { accountSyncJobSchema, type AccountSyncJob } from "@valorant/domain";
 import {
   databaseUrl,
   redisUrl,
@@ -8,6 +11,7 @@ import {
   riotClientId,
   riotClientSecret,
   riotPlatform,
+  riotApiKey,
   riotPostAuthRedirectUrl,
   riotRedirectUri,
   riotRsoAuthorizeUrl,
@@ -24,6 +28,7 @@ import { createAgentModelFromEnvironment } from "./openai-compatible-model.js";
 import { PostgresAgentTraceSink, type AgentTraceSink } from "./agent-trace.js";
 import { DemoSessionError, DemoSessionService } from "./demo-session.js";
 import { isDemoFixtureProfile, type DemoFixtureProfile } from "./demo-fixtures.js";
+import { enqueueAccountSync } from "./sync-queue.js";
 
 const SESSION_COOKIE = "valorant_session";
 
@@ -36,6 +41,7 @@ type RuntimeDependencies = {
   agentTrace?: AgentTraceSink | null;
   demoMode?: boolean;
   evalMode?: boolean;
+  syncEnqueuer?: (job: AccountSyncJob) => Promise<string>;
   demoSession?: { create(profile?: DemoFixtureProfile): Promise<{ token: string; expiresAt: Date }> };
 };
 
@@ -82,6 +88,7 @@ export function buildApp(dependencies: RuntimeDependencies = {
   const demoMode = dependencies.demoMode ?? enableDemoMode;
   const evalMode = dependencies.evalMode ?? enableEvalMode;
   const demoSession = dependencies.demoSession ?? new DemoSessionService(dependencies.pool);
+  const syncEnqueuer = dependencies.syncEnqueuer ?? enqueueAccountSync;
 
   app.get("/health", async () => {
     await dependencies.pool.query("SELECT 1");
@@ -108,6 +115,20 @@ export function buildApp(dependencies: RuntimeDependencies = {
     await oauth.disconnect(session.userId);
     return reply.code(204).send();
   });
+  app.get("/auth/status", async (request) => {
+    const session = await oauth.getSession(readCookie(request.headers.cookie, SESSION_COOKIE));
+    if (!session) return { authenticated: false, connected: false };
+    const result = await dependencies.pool.query<{ game_name: string | null; tag_line: string | null; rso_subject: string }>(
+      "SELECT game_name, tag_line, rso_subject FROM riot_accounts WHERE user_id = $1 LIMIT 1", [session.userId]
+    );
+    const account = result.rows[0];
+    return {
+      authenticated: true,
+      connected: Boolean(account),
+      mode: account?.rso_subject.startsWith("demo-rso-") ? "demo" : "riot",
+      account: account ? { gameName: account.game_name, tagLine: account.tag_line } : null
+    };
+  });
   // Demo mode is opt-in and uses only the fixed fixture account, so it can
   // power the hosted showcase when ENABLE_DEMO_MODE=true on Vercel.
   if (demoMode) {
@@ -126,12 +147,83 @@ export function buildApp(dependencies: RuntimeDependencies = {
       return reply.send({ mode: "eval", profile });
     });
   }
+  app.post("/sync", async (request, reply) => {
+    const session = await oauth.getSession(readCookie(request.headers.cookie, SESSION_COOKIE));
+    if (!session) throw new RiotOAuthError("authorization", 401, "A valid product session is required");
+    const riotAccountId = await analyticsReader.getRiotAccountId(session.userId);
+    if (!riotAccountId) return reply.code(409).send({ error: "riot_not_connected", message: "Connect a Riot account before syncing matches" });
+    const active = await analyticsReader.findActiveSyncJob(session.userId);
+    if (active) return reply.code(202).send(active);
+    const jobId = randomUUID();
+    const job = accountSyncJobSchema.parse({ jobId, riotAccountId, maxMatches: 10 });
+    const account = await dependencies.pool.query<{ rso_subject: string }>("SELECT rso_subject FROM riot_accounts WHERE id = $1", [riotAccountId]);
+    await analyticsReader.createSyncJob(jobId, session.userId, riotAccountId);
+    if (demoMode && account.rows[0]?.rso_subject.startsWith("demo-rso-")) {
+      const matches = await analyticsReader.getMatchList(session.userId, 10);
+      await analyticsReader.updateSyncJob(jobId, { status: "completed", imported: matches.matches.length, skipped: 0, completed: true });
+      return reply.code(202).send(await analyticsReader.getSyncJob(session.userId, jobId));
+    }
+    if (!riotApiKey) {
+      await analyticsReader.updateSyncJob(jobId, { status: "failed", errorCode: "configuration", errorMessage: "Riot Match API is not configured yet", completed: true });
+      return reply.code(503).send({ error: "sync_unavailable", message: "Riot Match API is not configured yet" });
+    }
+    try {
+      await syncEnqueuer(job);
+    } catch {
+      await analyticsReader.updateSyncJob(jobId, { status: "failed", errorCode: "queue_unavailable", errorMessage: "Sync queue is unavailable", completed: true });
+      return reply.code(503).send({ error: "sync_unavailable", message: "Sync queue is unavailable" });
+    }
+    return reply.code(202).send(await analyticsReader.getSyncJob(session.userId, jobId));
+  });
+  app.get("/sync/:jobId", async (request, reply) => {
+    const session = await oauth.getSession(readCookie(request.headers.cookie, SESSION_COOKIE));
+    if (!session) throw new RiotOAuthError("authorization", 401, "A valid product session is required");
+    const jobId = (request.params as { jobId: string }).jobId;
+    const job = await analyticsReader.getSyncJob(session.userId, jobId);
+    if (!job) return reply.code(404).send({ error: "not_found", message: "Sync job was not found" });
+    return job;
+  });
   app.get("/matches", async (request) => {
     const session = await oauth.getSession(readCookie(request.headers.cookie, SESSION_COOKIE));
     if (!session) throw new RiotOAuthError("authorization", 401, "A valid product session is required");
     const requestedLimit = Number((request.query as { limit?: string }).limit ?? 6);
     const limit = Number.isInteger(requestedLimit) && requestedLimit >= 1 && requestedLimit <= 10 ? requestedLimit : 6;
     return analyticsReader.getMatchList(session.userId, limit);
+  });
+  app.get("/benchmark", async (request) => {
+    const session = await oauth.getSession(readCookie(request.headers.cookie, SESSION_COOKIE));
+    if (!session) throw new RiotOAuthError("authorization", 401, "A valid product session is required");
+    return analyticsReader.getRankBenchmark(session.userId);
+  });
+  const memoryInput = z.object({ kind: z.enum(["goal", "summary"]), content: z.string().trim().min(1).max(2_000), sourceRunId: z.string().uuid().optional() }).strict();
+  app.get("/memory", async (request) => {
+    const session = await oauth.getSession(readCookie(request.headers.cookie, SESSION_COOKIE));
+    if (!session) throw new RiotOAuthError("authorization", 401, "A valid product session is required");
+    return { memories: await analyticsReader.getTrainingMemories(session.userId) };
+  });
+  app.post("/memory", async (request, reply) => {
+    const session = await oauth.getSession(readCookie(request.headers.cookie, SESSION_COOKIE));
+    if (!session) throw new RiotOAuthError("authorization", 401, "A valid product session is required");
+    const parsed = memoryInput.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_input", message: "Memory kind and content are required" });
+    const memory = await analyticsReader.createTrainingMemory(session.userId, parsed.data.kind, parsed.data.content, parsed.data.sourceRunId);
+    return reply.code(201).send(memory);
+  });
+  app.put("/memory/:id", async (request, reply) => {
+    const session = await oauth.getSession(readCookie(request.headers.cookie, SESSION_COOKIE));
+    if (!session) throw new RiotOAuthError("authorization", 401, "A valid product session is required");
+    const parsed = memoryInput.omit({ sourceRunId: true }).safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_input", message: "Memory kind and content are required" });
+    const memory = await analyticsReader.updateTrainingMemory(session.userId, (request.params as { id: string }).id, parsed.data.kind, parsed.data.content);
+    if (!memory) return reply.code(404).send({ error: "not_found", message: "Memory was not found" });
+    return memory;
+  });
+  app.delete("/memory/:id", async (request, reply) => {
+    const session = await oauth.getSession(readCookie(request.headers.cookie, SESSION_COOKIE));
+    if (!session) throw new RiotOAuthError("authorization", 401, "A valid product session is required");
+    const deleted = await analyticsReader.deleteTrainingMemory(session.userId, (request.params as { id: string }).id);
+    if (!deleted) return reply.code(404).send({ error: "not_found", message: "Memory was not found" });
+    return reply.code(204).send();
   });
   app.post("/agent/analyze", async (request, reply) => {
     const session = await oauth.getSession(readCookie(request.headers.cookie, SESSION_COOKIE));

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { AnalyticsReader, AttackDefenseResult, MapPerformanceResult, MapRoundSummaryResult, MatchDetailResult, MatchList, PlayerSummary, RecentPeriodComparisonResult, RoundEvidenceResult } from "./analytics-reader.js";
+import type { AnalyticsReader, AttackDefenseResult, MapPerformanceResult, MapRoundSummaryResult, MatchDetailResult, MatchList, PlayerSummary, RecentPeriodComparisonResult, RankBenchmark, RoundEvidenceResult, TrainingMemory } from "./analytics-reader.js";
 import { analysisAnswerSchema, type AuthenticatedUser } from "./agent-contracts.js";
 export { analysisAnswerSchema } from "./agent-contracts.js";
 
@@ -29,18 +29,8 @@ export type { AnalysisAnswer } from "./agent-contracts.js";
 
 export function createAnalyticsTools(
   user: AuthenticatedUser,
-  reader: Pick<AnalyticsReader, "getPlayerSummary" | "getMatchList" | "getMatchDetail" | "compareAttackDefense" | "compareMapPerformance" | "compareRecentPeriods" | "getRoundEvidence" | "findRoundEvidence"> & Partial<Pick<AnalyticsReader, "getMapRoundSummary">>
-): readonly [
-  AnalyticsTool<Record<string, never>, PlayerSummary>,
-  AnalyticsTool<{ limit: number }, MatchList>,
-  AnalyticsTool<{ matchId: string }, MatchDetailResult>,
-  AnalyticsTool<Record<string, never>, AttackDefenseResult>,
-  AnalyticsTool<Record<string, never>, MapPerformanceResult>,
-  AnalyticsTool<{ matchesPerPeriod: number }, RecentPeriodComparisonResult>,
-  AnalyticsTool<{ eventType: "first_death"; limit: number }, RoundEvidenceResult>,
-  AnalyticsTool<{ mapName: string; limit: number }, MapRoundSummaryResult>,
-  AnalyticsTool<{ matchId: string; roundNumber: number }, RoundEvidenceResult>
-] {
+  reader: Pick<AnalyticsReader, "getPlayerSummary" | "getMatchList" | "getMatchDetail" | "compareAttackDefense" | "compareMapPerformance" | "compareRecentPeriods" | "getRoundEvidence" | "findRoundEvidence"> & Partial<Pick<AnalyticsReader, "getMapRoundSummary" | "getRankBenchmark" | "getTrainingMemory">>
+): readonly AnalyticsTool<any, any>[] {
   return [
     {
       name: "get_player_summary",
@@ -123,6 +113,20 @@ export function createAnalyticsTools(
         additionalProperties: false
       },
       execute: ({ matchId, roundNumber }: { matchId: string; roundNumber: number }) => reader.getRoundEvidence(user.userId, matchId, roundNumber)
+    },
+    {
+      name: "get_rank_benchmark",
+      description: "Read an anonymized same-tier benchmark only when the authorized cohort meets the minimum sample threshold.",
+      inputSchema: emptyInputSchema,
+      modelSchema: { type: "object", properties: {}, additionalProperties: false },
+      execute: () => reader.getRankBenchmark!(user.userId) as Promise<RankBenchmark>
+    },
+    {
+      name: "get_training_memory",
+      description: "Read the authenticated player's user-provided training goals and analysis summaries. This is context, not match evidence.",
+      inputSchema: emptyInputSchema,
+      modelSchema: { type: "object", properties: {}, additionalProperties: false },
+      execute: () => reader.getTrainingMemory!(user.userId) as Promise<{ memories: TrainingMemory[]; limitation: string }>
     }
   ];
 }

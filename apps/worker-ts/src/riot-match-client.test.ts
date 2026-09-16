@@ -24,6 +24,13 @@ describe("RiotMatchClient", () => {
     await expect(client.getCompetitiveMatchIds("account-1")).resolves.toEqual(["competitive-1"]);
   });
 
+  it("accepts Riot's array-shaped match history response", async () => {
+    const fetch = vi.fn(async () => Response.json([{ matchId: "competitive-1", queueId: "competitive" }]));
+    const client = new RiotMatchClient({ apiKey: "server-only-key", platform: "ap", fetch });
+
+    await expect(client.getCompetitiveMatchIds("account-1")).resolves.toEqual(["competitive-1"]);
+  });
+
   it("retries 429 using Retry-After, then returns a validated match", async () => {
     const sleep = vi.fn(async () => undefined);
     const fetch = vi.fn()
