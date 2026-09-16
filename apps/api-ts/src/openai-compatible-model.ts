@@ -38,6 +38,7 @@ Each playerEvidence item must contain claim plus either metricName or both match
           + "\nFor a general summary, small-sample limitation, or no-data question: call only get_player_summary. Do not call trend, map, attack-defense, or match-detail tools unless the user explicitly asks for that comparison."
           + "\nIf get_player_summary reports metrics null, sampleSize 0, or fewer than 5 matches, confidence MUST be low. State the sample limitation; do not express high confidence merely because the absence of data is certain."
           + "\nFor a review of the latest match: call get_match_list first, then get_match_detail for that match. Do not call get_player_summary."
+          + "\nIf the user message contains '[Product scope: analyze only competitive match MATCH_ID]', call get_match_detail directly with exactly that MATCH_ID and analyze only that match. Do not call get_match_list or cross-match comparison tools."
         },
         { role: "user", content: `Question: ${request.userMessage}\nTool observations: ${observations}` }
       ],

@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 type Profile = "full" | "small" | "empty";
-type EvalCase = { id: string; profile: Profile; question: string; expectedTools: string[]; expectRefusal: boolean; expectLowConfidence?: boolean };
+type EvalCase = { id: string; profile: Profile; question: string; expectedTools: string[]; expectRefusal: boolean; expectLowConfidence?: boolean; scope?: { type: "recent" } | { type: "match"; matchId: string } };
 type ApiResult = { runId?: string; toolCalls?: number; toolNames?: string[]; answer?: { confidence?: string; playerEvidence?: unknown[]; limitations?: unknown[] }; usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number; estimatedCostUsd?: number | null }; error?: string; message?: string };
 const apiUrl = process.env.EVAL_API_URL ?? "http://127.0.0.1:8000";
 const root = resolve(import.meta.dirname, "../../..");
@@ -15,9 +15,9 @@ for (const item of cases) {
   const startedAt = Date.now(); let firstAttemptSucceeded = false; let providerRetry = false;
   try {
     const cookie = cookies.get(item.profile) ?? await login(item.profile); cookies.set(item.profile, cookie);
-    let response = await call("/agent/analyze", { method: "POST", headers: { "content-type": "application/json", cookie }, body: JSON.stringify({ question: item.question }) });
+    let response = await call("/agent/analyze", { method: "POST", headers: { "content-type": "application/json", cookie }, body: JSON.stringify({ question: item.question, scope: item.scope }) });
     let payload = await response.json() as ApiResult; firstAttemptSucceeded = response.ok;
-    if (response.status === 503 && payload.error === "model_failed") { providerRetry = true; response = await call("/agent/analyze", { method: "POST", headers: { "content-type": "application/json", cookie }, body: JSON.stringify({ question: item.question }) }); payload = await response.json() as ApiResult; }
+    if (response.status === 503 && payload.error === "model_failed") { providerRetry = true; response = await call("/agent/analyze", { method: "POST", headers: { "content-type": "application/json", cookie }, body: JSON.stringify({ question: item.question, scope: item.scope }) }); payload = await response.json() as ApiResult; }
     const providerUnavailable = response.status === 503 && payload.error === "model_failed";
     const actualTools = payload.toolNames ?? []; const refused = response.ok && actualTools.length === 0; const invalidInput = response.status === 400 && payload.error === "invalid_input";
     const toolMatch = JSON.stringify(actualTools) === JSON.stringify(item.expectedTools); const schemaValid = response.ok ? answerValid(payload.answer) : invalidInput;

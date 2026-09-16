@@ -124,13 +124,31 @@ export function buildApp(dependencies: RuntimeDependencies = {
       return reply.send({ mode: "eval", profile });
     });
   }
+  app.get("/matches", async (request) => {
+    const session = await oauth.getSession(readCookie(request.headers.cookie, SESSION_COOKIE));
+    if (!session) throw new RiotOAuthError("authorization", 401, "A valid product session is required");
+    const requestedLimit = Number((request.query as { limit?: string }).limit ?? 6);
+    const limit = Number.isInteger(requestedLimit) && requestedLimit >= 1 && requestedLimit <= 10 ? requestedLimit : 6;
+    return analyticsReader.getMatchList(session.userId, limit);
+  });
   app.post("/agent/analyze", async (request, reply) => {
     const session = await oauth.getSession(readCookie(request.headers.cookie, SESSION_COOKIE));
     if (!session) throw new RiotOAuthError("authorization", 401, "A valid product session is required");
-    const body = request.body as { question?: unknown } | undefined;
+    const body = request.body as { question?: unknown; scope?: unknown } | undefined;
     if (typeof body?.question !== "string") throw new AgentRunError("invalid_input", "question must be a string");
+    let scopedQuestion = body.question;
+    if (body.scope !== undefined) {
+      if (!body.scope || typeof body.scope !== "object" || !("type" in body.scope)) throw new AgentRunError("invalid_input", "scope is invalid");
+      const scope = body.scope as { type?: unknown; matchId?: unknown };
+      if (scope.type === "match") {
+        if (typeof scope.matchId !== "string" || !scope.matchId) throw new AgentRunError("invalid_input", "match scope requires matchId");
+        const ownedMatch = await analyticsReader.getMatchDetail(session.userId, scope.matchId);
+        if (!ownedMatch.match) return reply.code(404).send({ error: "match_not_found", message: "The selected competitive match was not found" });
+        scopedQuestion = `${body.question}\n[Product scope: analyze only competitive match ${scope.matchId}]`;
+      } else if (scope.type !== "recent") throw new AgentRunError("invalid_input", "scope type is invalid");
+    }
     const result = await createDefaultAnalysis({
-      user: { userId: session.userId }, question: body.question, reader: analyticsReader, model: agentModel, traceSink: agentTrace, usageRates: { inputUsdPerMillion: analysisModelInputUsdPerMillion, outputUsdPerMillion: analysisModelOutputUsdPerMillion }
+      user: { userId: session.userId }, question: scopedQuestion, reader: analyticsReader, model: agentModel, traceSink: agentTrace, usageRates: { inputUsdPerMillion: analysisModelInputUsdPerMillion, outputUsdPerMillion: analysisModelOutputUsdPerMillion }
     });
     return reply.send(result);
   });

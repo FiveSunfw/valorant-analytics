@@ -114,4 +114,23 @@ describe("Riot RSO routes", () => {
     expect(calls).toEqual(["user-1"]);
     await app.close();
   });
+
+  it("lists only current-user matches and rejects an unavailable match scope", async () => {
+    const listCalls: unknown[][] = [];
+    const app = buildApp({
+      ...inertDependencies,
+      oauth: { getSession: async () => ({ userId: "user-1", token: "session-token", expiresAt }) } as never,
+      analyticsReader: {
+        getMatchList: async (...args: unknown[]) => { listCalls.push(args); return { scope: { queue: "competitive", sampleSize: 1 }, matches: [{ matchId: "match-1", mapName: "Ascent", playedAt: "2026-09-16T00:00:00.000Z", result: "win" }] }; },
+        getMatchDetail: async () => ({ scope: { queue: "competitive", sampleSize: 0 }, match: null })
+      } as never,
+      agentTrace: null
+    });
+    const listed = await app.inject({ method: "GET", url: "/matches?limit=6", headers: { cookie: "valorant_session=session-token" } });
+    const unavailable = await app.inject({ method: "POST", url: "/agent/analyze", headers: { cookie: "valorant_session=session-token" }, payload: { question: "复盘这局", scope: { type: "match", matchId: "other-match" } } });
+    expect(listed.statusCode).toBe(200);
+    expect(listCalls).toEqual([["user-1", 6]]);
+    expect(unavailable.statusCode).toBe(404);
+    await app.close();
+  });
 });
