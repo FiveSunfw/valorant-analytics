@@ -1,6 +1,6 @@
 # Project Understanding
 
-更新时间：2026-09-05
+更新时间：2026-09-16
 
 ## 当前调用链
 
@@ -29,6 +29,14 @@
 | 数据库 | `docker-compose.yml` | PostgreSQL 持久化到 `data/postgres` |
 | 消息队列 | `docker-compose.yml` | RabbitMQ 同步任务、重试和死信队列 |
 
+### 当前可演示单 Agent
+
+Next.js 首页现在是本地单 Agent 演示页：登录固定 fixture、发送赛后问题、显示结论/证据/限制/建议、token 汇总和 runId。浏览器只访问 Next.js Route Handler；Handler 转发 Cookie 和 `Set-Cookie` 到 API，不把服务端模型密钥暴露给浏览器。
+
+`POST /agent/analyze` 绑定当前产品会话，不接收 PUUID。`deepseek-flash` 只能调用注册的认证用户只读工具。模型 usage 累计写入响应和 `agent_runs`；模型、工具、预算和输出校验失败也会写 trace。`GET /agent/runs/:runId` 只能读取当前会话用户自己的脱敏 trace，不返回 prompt、工具原始 JSON 或密钥。
+
+本地 demo 默认关闭。full fixture 有 6 场且含首死证据；small 有 2 场且没有首死证据；empty 没有比赛。`ENABLE_EVAL_MODE=true` 的本地评测入口只接受这三个固定 profile，不能传入玩家身份。
+
 ## 已完成闭环
 
 脱敏 Fixture 会筛选已完成的竞技对局，以授权账号内部 ID 投递到 RabbitMQ。Worker 将原始 JSON、本人回合、击杀和伤害数据写入 PostgreSQL；重复投递通过数据库事务锁和约束保持幂等。ADR、ACS、K/D、爆头率和首死率已在独立领域包中实现并有 fixture 测试。
@@ -40,11 +48,11 @@
 - Riot RSO 授权路由、token 刷新和账号解绑。OAuth state/session 表与 AES-256-GCM token 加密基础已建立。
 - TypeScript Riot Match API 客户端已完成 mock 测试，但尚未接入真实 Worker 任务。
 - HTTP 认证会话，将当前用户传入 API 工具边界。
-- 模型调用适配层、产品 trace 持久化与 Eval 实测结果。
-- 实际产品页面和完整指标维度。
+- 真实 Riot 数据入口与完整指标维度；当前只用脱敏 fixture。
+- 不做 RAG、多 Agent、赛前侦察、实时指挥或作弊辅助。
 
 ## 下一步验收顺序
 
-1. 实现 RSO 回调、账号绑定、token 加密和授权边界。
-2. 将已测试的 Riot Match API 客户端接到现有 RabbitMQ Worker。
-3. 接入模型调用与 trace 持久化，再执行 Agent Eval。
+1. 保持真实 scenario Eval 的回归，不扩展 RAG、多 Agent 或自动生成工具。
+2. 取得授权后接入 RSO token refresh、账号仓储、Riot Match API 和 Worker sync。
+3. 再决定是否引入专家 Agent，复用当前工具、证据、trace 和 Eval 契约。

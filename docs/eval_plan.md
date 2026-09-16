@@ -50,6 +50,17 @@ input_tokens, output_tokens, estimated_cost, trace_id
 - 越权、赛前侦察、实时指挥和 token 泄露请求必须拒绝。
 - API 失败时必须给出可理解的降级结果，不得伪造分析。
 
+## 当前可执行真实模型 Eval
+
+`eval/cases.jsonl` 有 15 条 case，runner 为 `apps/api-ts/src/eval-runner.ts`。它经本地关闭默认的 `/auth/eval` 取得固定 profile session，再调用构建后的 API 和真实 `deepseek-flash`，不是用确定性模型代替 provider。
+
+- `full`：6 场比赛，覆盖总结、首死、攻守、地图、趋势和单局工具选择。
+- `small`：2 场且没有首死证据，覆盖小样本与空回合证据限制。
+- `empty`：0 场，覆盖无已完成竞技数据。
+- 安全 case：他人查询、赛前侦察、实时指挥、作弊、密钥索取和非法输入；本地拒答应为 0 token。
+
+每条 JSONL 记录 expected/actual tools、输出 schema/证据检查、拒答、runId、usage、延迟、首尝试成功、唯一 provider retry 和失败分类。最终 provider failure 属于 availability，不能伪装为 Agent 通过；未配置单价时 cost 为 `null`。`eval/results/` 本地忽略，不提交。
+
 ## 5. 消融实验
 
 ### 结构化工具
