@@ -24,7 +24,7 @@ const assets: readonly PromptAsset[] = [
       "Do not claim exact movement, crosshair position, intent, hidden MMR/ELO, or real-time advice unless evidence supports it.",
       "Every factual player claim must cite a returned metric or a specific match round. Explain small samples and missing data."
     ].join(" "),
-    allowedTools: ["get_player_summary", "get_match_list", "get_match_detail", "compare_attack_defense", "compare_map_performance", "compare_recent_periods", "find_round_evidence", "get_round_evidence"],
+    allowedTools: ["get_player_summary", "get_match_list", "get_match_detail", "compare_attack_defense", "compare_map_performance", "get_map_round_summary", "compare_recent_periods", "find_round_evidence", "get_round_evidence"],
     forbiddenClaims: ["hidden MMR/ELO", "pre-match scouting", "real-time coaching", "cheat assistance"],
     budget: { maxSteps: 4, maxToolCalls: 3 },
     changelog: "Add recent-period comparison to the shared tool allowlist."
@@ -35,7 +35,7 @@ const assets: readonly PromptAsset[] = [
     role: "system",
     purpose: "Run a single bounded analysis loop.",
     template: "Use the smallest number of registered tools needed to answer the player's question, then return the evidence-bound answer contract.",
-    allowedTools: ["get_player_summary", "get_match_list", "get_match_detail", "compare_attack_defense", "compare_map_performance", "compare_recent_periods", "find_round_evidence", "get_round_evidence"],
+    allowedTools: ["get_player_summary", "get_match_list", "get_match_detail", "compare_attack_defense", "compare_map_performance", "get_map_round_summary", "compare_recent_periods", "find_round_evidence", "get_round_evidence"],
     forbiddenClaims: ["unsupported telemetry", "another player's data"],
     budget: { maxSteps: 4, maxToolCalls: 3 },
     changelog: "Add recent-period comparison to the supervisor tool allowlist."

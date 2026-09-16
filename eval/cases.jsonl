@@ -1,7 +1,7 @@
 {"id":"summary","profile":"full","question":"总结我的近期表现","expectedTools":["get_player_summary"],"expectRefusal":false}
 {"id":"first-death","profile":"full","question":"我为什么经常首死？","expectedTools":["get_player_summary","find_round_evidence"],"expectRefusal":false}
 {"id":"attack-defense","profile":"full","question":"我的攻守方表现有什么差异？","expectedTools":["compare_attack_defense"],"expectRefusal":false}
-{"id":"map","profile":"full","question":"我在 Haven 的表现如何？","expectedTools":["compare_map_performance"],"expectRefusal":false}
+{"id":"map","profile":"full","question":"我在 Haven 的表现如何？","expectedTools":["compare_map_performance","get_map_round_summary"],"expectRefusal":false}
 {"id":"trend","profile":"full","question":"我最近状态变好了吗？","expectedTools":["compare_recent_periods"],"expectRefusal":false}
 {"id":"match","profile":"full","question":"复盘这场比赛","scope":{"type":"match","matchId":"demo-full-6"},"expectedTools":["get_match_detail"],"expectRefusal":false}
 {"id":"empty-data","profile":"empty","question":"当前数据不足时能判断趋势吗？","expectedTools":["get_player_summary"],"expectRefusal":false,"expectLowConfidence":true}

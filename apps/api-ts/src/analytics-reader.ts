@@ -24,6 +24,8 @@ export type MapPerformance = {
   kd: number; adr: number; acs: number; firstDeathRate: number;
 };
 export type MapPerformanceResult = { scope: AnalyticsScope; maps: MapPerformance[] };
+export type MapRoundSummary = { matchId: string; roundNumber: number; side: "attack" | "defense"; won: boolean; roundResult: string | null; wasFirstDeath: boolean };
+export type MapRoundSummaryResult = { scope: AnalyticsScope; mapName: string; matches: number; rounds: MapRoundSummary[] };
 export type PeriodPerformance = {
   matches: number; wins: number; losses: number; winRate: number;
   kd: number; adr: number; acs: number; firstDeathRate: number;
@@ -290,6 +292,33 @@ export class AnalyticsReader {
         return { mapName: row.map_name, matches, wins, losses: matches - wins, winRate: percentage(wins, matches), kd: metrics.kd, adr: metrics.adr, acs: metrics.acs, firstDeathRate: metrics.firstDeathRate };
       })
     };
+  }
+
+  async getMapRoundSummary(userId: string, mapName: string, limit: number): Promise<MapRoundSummaryResult> {
+    const result = await this.pool.query<{
+      match_id: string; round_number: number; player_side: "attack" | "defense"; won: boolean; round_result: string | null;
+      was_first_death: boolean; match_count: string; period_start: string | null; period_end: string | null;
+    }>(
+      `WITH rounds_for_map AS (
+        SELECT matches.match_id, matches.game_start_millis, rounds.round_number, rounds.round_result,
+          rounds.winning_team = stats.team_id AS won,
+          CASE WHEN rounds.winning_team = stats.team_id THEN lower(rounds.winning_team_role)
+            WHEN rounds.winning_team_role = 'Attack' THEN 'defense' ELSE 'attack' END AS player_side,
+          EXISTS (SELECT 1 FROM round_kills kills WHERE kills.match_id = matches.match_id AND kills.riot_account_id = accounts.id
+            AND kills.round_number = rounds.round_number AND kills.is_first_death = TRUE AND kills.is_victim = TRUE) AS was_first_death
+        FROM riot_accounts accounts JOIN player_match_stats stats ON stats.riot_account_id = accounts.id
+        JOIN matches ON matches.match_id = stats.match_id JOIN match_rounds rounds ON rounds.match_id = matches.match_id
+        WHERE accounts.user_id = $1 AND matches.map_id = $2 AND matches.queue_id = $3 AND matches.is_ranked = TRUE AND matches.is_completed = TRUE
+      ), map_scope AS (
+        SELECT COUNT(DISTINCT match_id) AS match_count, MIN(game_start_millis) AS period_start, MAX(game_start_millis) AS period_end FROM rounds_for_map
+      ) SELECT rounds_for_map.*, map_scope.match_count, map_scope.period_start, map_scope.period_end
+        FROM rounds_for_map CROSS JOIN map_scope ORDER BY match_id DESC, round_number DESC LIMIT $4`,
+      [userId, mapName, COMPETITIVE_QUEUE_ID, limit]
+    );
+    const first = result.rows[0];
+    return { scope: makeScope(first ? Number(first.match_count) : 0, first?.period_start ?? null, first?.period_end ?? null), mapName,
+      matches: first ? Number(first.match_count) : 0,
+      rounds: result.rows.map((row) => ({ matchId: row.match_id, roundNumber: row.round_number, side: row.player_side, won: row.won, roundResult: row.round_result, wasFirstDeath: row.was_first_death })) };
   }
 
   async compareRecentPeriods(userId: string, matchesPerPeriod: number): Promise<RecentPeriodComparisonResult> {

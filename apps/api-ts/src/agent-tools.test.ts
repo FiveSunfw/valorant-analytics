@@ -22,7 +22,7 @@ describe("analysis tools", () => {
     await tools[4].execute({});
     await tools[5].execute({ matchesPerPeriod: 3 });
     await tools[6].execute({ eventType: "first_death", limit: 2 });
-    await tools[7].execute({ matchId: "match-1", roundNumber: 1 });
+    await tools[8].execute({ matchId: "match-1", roundNumber: 1 });
     expect(calls).toEqual([
       ["a28f4545-1443-4e7b-b456-1d1c1e65f9c0"],
       ["a28f4545-1443-4e7b-b456-1d1c1e65f9c0", 5],

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { AnalyticsReader, AttackDefenseResult, MapPerformanceResult, MatchDetailResult, MatchList, PlayerSummary, RecentPeriodComparisonResult, RoundEvidenceResult } from "./analytics-reader.js";
+import type { AnalyticsReader, AttackDefenseResult, MapPerformanceResult, MapRoundSummaryResult, MatchDetailResult, MatchList, PlayerSummary, RecentPeriodComparisonResult, RoundEvidenceResult } from "./analytics-reader.js";
 import { analysisAnswerSchema, type AuthenticatedUser } from "./agent-contracts.js";
 export { analysisAnswerSchema } from "./agent-contracts.js";
 
@@ -23,12 +23,13 @@ const findRoundEvidenceInputSchema = z.object({
   eventType: z.literal("first_death"),
   limit: z.number().int().min(1).max(10).default(5)
 }).strict();
+const mapRoundSummaryInputSchema = z.object({ mapName: z.string().min(1), limit: z.number().int().min(1).max(30).default(20) }).strict();
 
 export type { AnalysisAnswer } from "./agent-contracts.js";
 
 export function createAnalyticsTools(
   user: AuthenticatedUser,
-  reader: Pick<AnalyticsReader, "getPlayerSummary" | "getMatchList" | "getMatchDetail" | "compareAttackDefense" | "compareMapPerformance" | "compareRecentPeriods" | "getRoundEvidence" | "findRoundEvidence">
+  reader: Pick<AnalyticsReader, "getPlayerSummary" | "getMatchList" | "getMatchDetail" | "compareAttackDefense" | "compareMapPerformance" | "compareRecentPeriods" | "getRoundEvidence" | "findRoundEvidence"> & Partial<Pick<AnalyticsReader, "getMapRoundSummary">>
 ): readonly [
   AnalyticsTool<Record<string, never>, PlayerSummary>,
   AnalyticsTool<{ limit: number }, MatchList>,
@@ -37,6 +38,7 @@ export function createAnalyticsTools(
   AnalyticsTool<Record<string, never>, MapPerformanceResult>,
   AnalyticsTool<{ matchesPerPeriod: number }, RecentPeriodComparisonResult>,
   AnalyticsTool<{ eventType: "first_death"; limit: number }, RoundEvidenceResult>,
+  AnalyticsTool<{ mapName: string; limit: number }, MapRoundSummaryResult>,
   AnalyticsTool<{ matchId: string; roundNumber: number }, RoundEvidenceResult>
 ] {
   return [
@@ -102,6 +104,13 @@ export function createAnalyticsTools(
         additionalProperties: false
       },
       execute: ({ eventType, limit }: { eventType: "first_death"; limit: number }) => reader.findRoundEvidence(user.userId, eventType, limit)
+    },
+    {
+      name: "get_map_round_summary",
+      description: "Read concrete completed-round outcomes, side, and first-death flags for one owned competitive map. Use after map comparison to diagnose a map-level loss pattern.",
+      inputSchema: mapRoundSummaryInputSchema,
+      modelSchema: { type: "object", properties: { mapName: { type: "string", minLength: 1 }, limit: { type: "integer", minimum: 1, maximum: 30, default: 20 } }, required: ["mapName"], additionalProperties: false },
+      execute: ({ mapName, limit }: { mapName: string; limit: number }) => reader.getMapRoundSummary!(user.userId, mapName, limit)
     },
     {
       name: "get_round_evidence",
