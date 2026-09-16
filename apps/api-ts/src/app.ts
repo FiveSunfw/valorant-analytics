@@ -108,7 +108,9 @@ export function buildApp(dependencies: RuntimeDependencies = {
     await oauth.disconnect(session.userId);
     return reply.code(204).send();
   });
-  if (demoMode && process.env.NODE_ENV !== "production") {
+  // Demo mode is opt-in and uses only the fixed fixture account, so it can
+  // power the hosted showcase when ENABLE_DEMO_MODE=true on Vercel.
+  if (demoMode) {
     app.post("/auth/demo", async (_request, reply) => {
       const session = await demoSession.create();
       reply.header("Set-Cookie", sessionCookie(session.token, Math.floor((session.expiresAt.getTime() - Date.now()) / 1_000)));
