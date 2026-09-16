@@ -1,0 +1,13 @@
+# Internal working documents are intentionally local-only.
+agent_harness.md
+agent_implementation_checkpoints.final.v1.md
+agent_system_architecture.final.v1.md
+architecture.md
+data_model.md
+eval_plan.md
+knowledge_base_architecture.final.v1.md
+project_understanding.md
+prompt_assets_and_versioning.final.v1.md
+prompt_plan.md
+resume_and_interview_guide.md
+spec.md
