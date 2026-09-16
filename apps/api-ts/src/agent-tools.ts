@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { AnalyticsReader, AttackDefenseResult, MapPerformanceResult, MapRoundSummaryResult, MatchDetailResult, MatchList, PlayerSummary, RecentPeriodComparisonResult, RankBenchmark, RoundEvidenceResult, TrainingMemory } from "./analytics-reader.js";
+import type { AnalyticsReader, AttackDefenseResult, MapPerformanceResult, MapRoundSummaryResult, MatchDetailResult, MatchList, PlayerSummary, RecentPeriodComparisonResult, RankBenchmark, RoundEvidenceResult, TrainingMemory, KnowledgeResult } from "./analytics-reader.js";
 import { analysisAnswerSchema, type AuthenticatedUser } from "./agent-contracts.js";
 export { analysisAnswerSchema } from "./agent-contracts.js";
 
@@ -20,16 +20,18 @@ const roundEvidenceInputSchema = z.object({
   roundNumber: z.number().int().min(1)
 }).strict();
 const findRoundEvidenceInputSchema = z.object({
-  eventType: z.literal("first_death"),
+  eventType: z.enum(["first_death", "death", "kill", "assist"]),
   limit: z.number().int().min(1).max(10).default(5)
 }).strict();
 const mapRoundSummaryInputSchema = z.object({ mapName: z.string().min(1), limit: z.number().int().min(1).max(30).default(20) }).strict();
+const knowledgeInputSchema = z.object({ query: z.string().trim().min(2).max(200), mapName: z.string().trim().min(1).max(64).optional(), side: z.enum(["attack", "defense"]).optional(), limit: z.number().int().min(1).max(5).default(5) }).strict();
+const timeWindowInputSchema = z.object({ from: z.string().datetime(), to: z.string().datetime() }).strict().refine((value) => Date.parse(value.to) >= Date.parse(value.from), "to must be after from");
 
 export type { AnalysisAnswer } from "./agent-contracts.js";
 
 export function createAnalyticsTools(
   user: AuthenticatedUser,
-  reader: Pick<AnalyticsReader, "getPlayerSummary" | "getMatchList" | "getMatchDetail" | "compareAttackDefense" | "compareMapPerformance" | "compareRecentPeriods" | "getRoundEvidence" | "findRoundEvidence"> & Partial<Pick<AnalyticsReader, "getMapRoundSummary" | "getRankBenchmark" | "getTrainingMemory">>
+  reader: Pick<AnalyticsReader, "getPlayerSummary" | "getMatchList" | "getMatchDetail" | "compareAttackDefense" | "compareMapPerformance" | "compareRecentPeriods" | "getRoundEvidence" | "findRoundEvidence"> & Partial<Pick<AnalyticsReader, "getMapRoundSummary" | "getRankBenchmark" | "getTrainingMemory" | "searchKnowledge" | "getActPerformance" | "getAgentPerformance" | "getEconomyPerformance" | "getTimeWindow">>
 ): readonly AnalyticsTool<any, any>[] {
   return [
     {
@@ -89,11 +91,11 @@ export function createAnalyticsTools(
       inputSchema: findRoundEvidenceInputSchema,
       modelSchema: {
         type: "object",
-        properties: { eventType: { type: "string", enum: ["first_death"] }, limit: { type: "integer", minimum: 1, maximum: 10 } },
+        properties: { eventType: { type: "string", enum: ["first_death", "death", "kill", "assist"] }, limit: { type: "integer", minimum: 1, maximum: 10 } },
         required: ["eventType"],
         additionalProperties: false
       },
-      execute: ({ eventType, limit }: { eventType: "first_death"; limit: number }) => reader.findRoundEvidence(user.userId, eventType, limit)
+      execute: ({ eventType, limit }: { eventType: "first_death" | "death" | "kill" | "assist"; limit: number }) => reader.findRoundEvidence(user.userId, eventType, limit)
     },
     {
       name: "get_map_round_summary",
@@ -127,6 +129,41 @@ export function createAnalyticsTools(
       inputSchema: emptyInputSchema,
       modelSchema: { type: "object", properties: {}, additionalProperties: false },
       execute: () => reader.getTrainingMemory!(user.userId) as Promise<{ memories: TrainingMemory[]; limitation: string }>
+    },
+    {
+      name: "search_knowledge",
+      description: "Search approved, versioned general coaching knowledge. Results are background evidence, never proof of the player's actions.",
+      inputSchema: knowledgeInputSchema,
+      modelSchema: { type: "object", properties: { query: { type: "string", minLength: 2, maxLength: 200 }, mapName: { type: "string" }, side: { type: "string", enum: ["attack", "defense"] }, limit: { type: "integer", minimum: 1, maximum: 5 } }, required: ["query"], additionalProperties: false },
+      execute: ({ query, mapName, side, limit }: { query: string; mapName?: string; side?: "attack" | "defense"; limit: number }) => reader.searchKnowledge!(user.userId, query, mapName, side, limit) as Promise<{ query: string; results: KnowledgeResult[]; limitation: string }>
+    },
+    {
+      name: "get_act_performance",
+      description: "Compare the authenticated player's observable tier and metrics by Riot season/Act.",
+      inputSchema: emptyInputSchema,
+      modelSchema: { type: "object", properties: {}, additionalProperties: false },
+      execute: () => reader.getActPerformance!(user.userId)
+    },
+    {
+      name: "get_agent_performance",
+      description: "Compare the authenticated player's own completed competitive performance by agent.",
+      inputSchema: emptyInputSchema,
+      modelSchema: { type: "object", properties: {}, additionalProperties: false },
+      execute: () => reader.getAgentPerformance!(user.userId)
+    },
+    {
+      name: "get_economy_performance",
+      description: "Analyze the authenticated player's own round outcomes by available economy category.",
+      inputSchema: emptyInputSchema,
+      modelSchema: { type: "object", properties: {}, additionalProperties: false },
+      execute: () => reader.getEconomyPerformance!(user.userId)
+    },
+    {
+      name: "get_time_window",
+      description: "Read deterministic metrics for an explicit time window within the authenticated player's completed competitive history.",
+      inputSchema: timeWindowInputSchema,
+      modelSchema: { type: "object", properties: { from: { type: "string", format: "date-time" }, to: { type: "string", format: "date-time" } }, required: ["from", "to"], additionalProperties: false },
+      execute: ({ from, to }: { from: string; to: string }) => reader.getTimeWindow!(user.userId, from, to)
     }
   ];
 }

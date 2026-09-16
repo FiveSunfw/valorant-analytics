@@ -11,7 +11,8 @@ const reader = {
   compareMapPerformance: async () => ({ scope: { queue: "competitive" as const, sampleSize: 0 }, maps: [] }),
   compareRecentPeriods: async () => ({ scope: { queue: "competitive" as const, sampleSize: 0 }, matchesPerPeriod: 3, recent: null, previous: null, deltas: null }),
   findRoundEvidence: async () => ({ scope: { queue: "competitive" as const, sampleSize: 0 }, evidence: [] }),
-  getRoundEvidence: async () => ({ scope: { queue: "competitive" as const, sampleSize: 0 }, evidence: [] })
+  getRoundEvidence: async () => ({ scope: { queue: "competitive" as const, sampleSize: 0 }, evidence: [] }),
+  searchKnowledge: async (_userId: string, query: string) => ({ query, results: [], limitation: "background only" })
 };
 
 class ScriptedModel implements AgentModel {
@@ -58,5 +59,14 @@ describe("minimal analysis agent", () => {
       { kind: "tool_call", toolName: "get_player_summary", input: {} },
       { kind: "tool_call", toolName: "get_match_list", input: { limit: 5 } }
     ]) })).rejects.toMatchObject({ code: "budget_exceeded" } satisfies Partial<AgentRunError>);
+  });
+
+  it("keeps map teaching separate from player evidence", async () => {
+    const result = await runAnalysis({ user, question: "Haven 防守架枪教学", tools: createAnalyticsTools(user, reader), model: new ScriptedModel([
+      { kind: "final", answer: { conclusion: "Use returned teaching only as background.", playerEvidence: [], knowledgeEvidence: [], confidence: "low", recommendations: [], limitations: ["Teaching content is not player evidence."], nextQuestions: [] } },
+      { kind: "final", answer: { conclusion: "Use returned teaching only as background.", playerEvidence: [], knowledgeEvidence: [], confidence: "low", recommendations: [], limitations: ["Teaching content is not player evidence."], nextQuestions: [] } }
+    ]) });
+    expect(result.toolCalls).toBe(1);
+    expect(result.toolNames).toEqual(["search_knowledge"]);
   });
 });

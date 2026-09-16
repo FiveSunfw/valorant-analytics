@@ -195,6 +195,31 @@ export function buildApp(dependencies: RuntimeDependencies = {
     if (!session) throw new RiotOAuthError("authorization", 401, "A valid product session is required");
     return analyticsReader.getRankBenchmark(session.userId);
   });
+  for (const [path, method] of [["/analytics/acts", "getActPerformance"], ["/analytics/agents", "getAgentPerformance"], ["/analytics/economy", "getEconomyPerformance"]] as const) {
+    app.get(path, async (request) => {
+      const session = await oauth.getSession(readCookie(request.headers.cookie, SESSION_COOKIE));
+      if (!session) throw new RiotOAuthError("authorization", 401, "A valid product session is required");
+      return analyticsReader[method](session.userId);
+    });
+  }
+  app.get("/analytics/window", async (request, reply) => {
+    const session = await oauth.getSession(readCookie(request.headers.cookie, SESSION_COOKIE));
+    if (!session) throw new RiotOAuthError("authorization", 401, "A valid product session is required");
+    const params = request.query as { from?: string; to?: string };
+    if (!params.from || !params.to || Number.isNaN(Date.parse(params.from)) || Number.isNaN(Date.parse(params.to)) || Date.parse(params.to) < Date.parse(params.from)) return reply.code(400).send({ error: "invalid_input", message: "from and to must be valid ordered ISO dates" });
+    return analyticsReader.getTimeWindow(session.userId, params.from, params.to);
+  });
+  app.get("/knowledge/search", async (request, reply) => {
+    const session = await oauth.getSession(readCookie(request.headers.cookie, SESSION_COOKIE));
+    if (!session) throw new RiotOAuthError("authorization", 401, "A valid product session is required");
+    const query = String((request.query as { q?: string }).q ?? "").trim();
+    if (query.length < 2 || query.length > 200) return reply.code(400).send({ error: "invalid_input", message: "A knowledge query between 2 and 200 characters is required" });
+    const params = request.query as { map?: string; side?: string; limit?: string };
+    const side = params.side === "attack" || params.side === "defense" ? params.side : undefined;
+    const parsedLimit = Number(params.limit ?? 5);
+    const limit = Number.isInteger(parsedLimit) && parsedLimit >= 1 && parsedLimit <= 10 ? parsedLimit : 5;
+    return analyticsReader.searchKnowledge(session.userId, query, params.map, side, limit);
+  });
   const memoryInput = z.object({ kind: z.enum(["goal", "summary"]), content: z.string().trim().min(1).max(2_000), sourceRunId: z.string().uuid().optional() }).strict();
   app.get("/memory", async (request) => {
     const session = await oauth.getSession(readCookie(request.headers.cookie, SESSION_COOKIE));
@@ -206,6 +231,12 @@ export function buildApp(dependencies: RuntimeDependencies = {
     if (!session) throw new RiotOAuthError("authorization", 401, "A valid product session is required");
     const parsed = memoryInput.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_input", message: "Memory kind and content are required" });
+    if (parsed.data.sourceRunId && parsed.data.kind !== "summary") return reply.code(400).send({ error: "invalid_input", message: "Only a training summary can cite an analysis run" });
+    if (parsed.data.sourceRunId) {
+      const hasCompletedRun = typeof analyticsReader.hasCompletedAgentRun === "function"
+        && await analyticsReader.hasCompletedAgentRun(session.userId, parsed.data.sourceRunId);
+      if (!hasCompletedRun) return reply.code(404).send({ error: "not_found", message: "The analysis run was not found for this user" });
+    }
     const memory = await analyticsReader.createTrainingMemory(session.userId, parsed.data.kind, parsed.data.content, parsed.data.sourceRunId);
     return reply.code(201).send(memory);
   });

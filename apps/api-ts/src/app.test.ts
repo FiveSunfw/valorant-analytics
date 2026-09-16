@@ -161,6 +161,12 @@ describe("account data routes", () => {
         createTrainingMemory: async (_userId: string, kind: "goal" | "summary", content: string, sourceRunId?: string) => ({ id: "memory-1", kind, content, sourceRunId, createdAt: "2030-01-01T00:00:00.000Z", updatedAt: "2030-01-01T00:00:00.000Z" }),
         updateTrainingMemory: async (_userId: string, id: string) => id === "memory-1" ? { id, kind: "goal", content: "updated", createdAt: "2030-01-01T00:00:00.000Z", updatedAt: "2030-01-01T00:00:00.000Z" } : null,
         deleteTrainingMemory: async (_userId: string, id: string) => id === "memory-1",
+        hasCompletedAgentRun: async () => true,
+        getActPerformance: async (userId: string) => ({ scope: { queue: "competitive", sampleSize: 0 }, acts: [{ act: userId, matches: 0, tier: null, metrics: null }] }),
+        getAgentPerformance: async () => ({ scope: { queue: "competitive", sampleSize: 0 }, agents: [] }),
+        getEconomyPerformance: async () => ({ scope: { queue: "competitive", sampleSize: 0 }, categories: [] }),
+        getTimeWindow: async (_userId: string, from: string, to: string) => ({ scope: { queue: "competitive", sampleSize: 0, periodStart: from, periodEnd: to }, metrics: null }),
+        searchKnowledge: async (_userId: string, query: string) => ({ query, results: [], limitation: "knowledge background" }),
         getRankBenchmark: async () => ({ available: false, tier: null, cohortPlayers: 0, minimumPlayers: 5, player: null, median: null, limitation: "sample too small" })
       } as never,
       syncEnqueuer: async (job) => job.jobId,
@@ -187,6 +193,33 @@ describe("account data routes", () => {
     expect(sync.json().jobId).toBe("11111111-1111-4111-8111-111111111111");
     const benchmark = await app.inject({ method: "GET", url: "/benchmark", headers: { cookie: "valorant_session=session-token" } });
     expect(benchmark.json()).toMatchObject({ available: false, cohortPlayers: 2, minimumPlayers: 5 });
+    await app.close();
+  });
+
+  it("protects analytics and knowledge routes and validates time windows", async () => {
+    const app = makeApp();
+    expect((await app.inject({ method: "GET", url: "/analytics/acts" })).statusCode).toBe(401);
+    const acts = await app.inject({ method: "GET", url: "/analytics/acts", headers: { cookie: "valorant_session=session-token" } });
+    const knowledge = await app.inject({ method: "GET", url: "/knowledge/search?q=Haven%20defense&map=Haven&side=defense&limit=3", headers: { cookie: "valorant_session=session-token" } });
+    const invalidWindow = await app.inject({ method: "GET", url: "/analytics/window?from=2026-09-17T00:00:00.000Z&to=2026-09-16T00:00:00.000Z", headers: { cookie: "valorant_session=session-token" } });
+    expect(acts.statusCode).toBe(200);
+    expect(knowledge.statusCode).toBe(200);
+    expect(knowledge.json()).toMatchObject({ query: "Haven defense", results: [] });
+    expect(invalidWindow.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it("only saves a summary when its analysis run belongs to the current user", async () => {
+    const app = makeApp({ analyticsReader: {
+      createTrainingMemory: async (_userId: string, kind: "goal" | "summary", content: string, sourceRunId?: string) => ({ id: "memory-1", kind, content, sourceRunId, createdAt: "2030-01-01T00:00:00.000Z", updatedAt: "2030-01-01T00:00:00.000Z" }),
+      hasCompletedAgentRun: async (_userId: string, runId: string) => runId === "11111111-1111-4111-8111-111111111111"
+    } });
+    const foreign = await app.inject({ method: "POST", url: "/memory", headers: { cookie: "valorant_session=session-token" }, payload: { kind: "summary", content: "foreign", sourceRunId: "22222222-2222-4222-8222-222222222222" } });
+    const goalWithRun = await app.inject({ method: "POST", url: "/memory", headers: { cookie: "valorant_session=session-token" }, payload: { kind: "goal", content: "goal", sourceRunId: "11111111-1111-4111-8111-111111111111" } });
+    const own = await app.inject({ method: "POST", url: "/memory", headers: { cookie: "valorant_session=session-token" }, payload: { kind: "summary", content: "own", sourceRunId: "11111111-1111-4111-8111-111111111111" } });
+    expect(foreign.statusCode).toBe(404);
+    expect(goalWithRun.statusCode).toBe(400);
+    expect(own.statusCode).toBe(201);
     await app.close();
   });
 });

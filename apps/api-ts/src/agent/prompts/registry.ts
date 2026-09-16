@@ -22,9 +22,9 @@ const assets: readonly PromptAsset[] = [
       "You analyze only the authenticated player's completed competitive VALORANT data.",
       "Never request a PUUID, token, another player's data, or arbitrary SQL.",
       "Do not claim exact movement, crosshair position, intent, hidden MMR/ELO, or real-time advice unless evidence supports it.",
-      "Every factual player claim must cite a returned metric or a specific match round. Explain small samples and missing data. Training memory is user-provided context and must never be presented as match evidence. Same-tier benchmarks are allowed only when the tool says they are available."
+      "Every factual player claim must cite a returned metric or a specific match round. Explain small samples and missing data. Training memory is user-provided context and must never be presented as match evidence. Same-tier benchmarks are allowed only when the tool says they are available. General coaching knowledge is background evidence and must never prove what the player did."
     ].join(" "),
-    allowedTools: ["get_player_summary", "get_match_list", "get_match_detail", "compare_attack_defense", "compare_map_performance", "get_map_round_summary", "compare_recent_periods", "find_round_evidence", "get_round_evidence", "get_rank_benchmark", "get_training_memory"],
+    allowedTools: ["get_player_summary", "get_match_list", "get_match_detail", "compare_attack_defense", "compare_map_performance", "get_map_round_summary", "compare_recent_periods", "find_round_evidence", "get_round_evidence", "get_rank_benchmark", "get_training_memory", "search_knowledge", "get_act_performance", "get_agent_performance", "get_economy_performance", "get_time_window"],
     forbiddenClaims: ["hidden MMR/ELO", "pre-match scouting", "real-time coaching", "cheat assistance"],
     budget: { maxSteps: 4, maxToolCalls: 3 },
     changelog: "Add same-tier benchmark and user-controlled training memory with evidence boundaries."
@@ -35,7 +35,7 @@ const assets: readonly PromptAsset[] = [
     role: "system",
     purpose: "Run a single bounded analysis loop.",
     template: "Use the smallest number of registered tools needed to answer the player's question, then return the evidence-bound answer contract.",
-    allowedTools: ["get_player_summary", "get_match_list", "get_match_detail", "compare_attack_defense", "compare_map_performance", "get_map_round_summary", "compare_recent_periods", "find_round_evidence", "get_round_evidence", "get_rank_benchmark", "get_training_memory"],
+    allowedTools: ["get_player_summary", "get_match_list", "get_match_detail", "compare_attack_defense", "compare_map_performance", "get_map_round_summary", "compare_recent_periods", "find_round_evidence", "get_round_evidence", "get_rank_benchmark", "get_training_memory", "search_knowledge", "get_act_performance", "get_agent_performance", "get_economy_performance", "get_time_window"],
     forbiddenClaims: ["unsupported telemetry", "another player's data"],
     budget: { maxSteps: 4, maxToolCalls: 3 },
     changelog: "Register bounded benchmark and training-memory tools."

@@ -30,16 +30,21 @@ describeIntegration("AnalyticsReader against PostgreSQL", () => {
       await pool.query("INSERT INTO round_damage (match_id,riot_account_id,round_number,damage_index,damage,headshots,bodyshots,legshots) VALUES ($1,$2,$3,0,$4,$5,$6,0)", [matchId, accountId, round, round === 1 ? 100 : 50, round === 1 || round === 3 ? 1 : 0, round === 1 || round === 2 ? 1 : 0]);
     }
     await pool.query("INSERT INTO round_kills (match_id,riot_account_id,round_number,kill_index,is_killer,is_victim,is_assistant,is_first_death,round_time_millis,finishing_item) VALUES ($1,$2,1,0,FALSE,TRUE,FALSE,TRUE,100,'Vandal')", [matchId, accountId]);
+    await pool.query("INSERT INTO round_kills (match_id,riot_account_id,round_number,kill_index,is_killer,is_victim,is_assistant,is_first_kill,round_time_millis,finishing_item) VALUES ($1,$2,3,0,TRUE,FALSE,FALSE,TRUE,200,'Vandal')", [matchId, accountId]);
 
     const reader = new AnalyticsReader(pool);
-    expect(await reader.getPlayerSummary(userId)).toMatchObject({ scope: { queue: "competitive", sampleSize: 1 }, metrics: { adr: 66.67, acs: 200, kd: 2, headshotRate: 50, firstDeathRate: 33.33 } });
+    expect(await reader.getPlayerSummary(userId)).toMatchObject({ scope: { queue: "competitive", sampleSize: 1 }, metrics: { adr: 66.67, acs: 200, kd: 2, headshotRate: 50, firstDeathRate: 33.33, firstKillRate: 33.33, kast: 66.67 } });
     expect(await reader.getMatchList(userId, 5)).toMatchObject({ matches: [{ matchId, result: "win" }] });
-    expect(await reader.getMatchDetail(userId, matchId)).toMatchObject({ match: { matchId, roundsWon: 2, roundsLost: 1, kills: 2, deaths: 1, metrics: { adr: 66.67 } } });
+    expect(await reader.getMatchDetail(userId, matchId)).toMatchObject({ match: { matchId, roundsWon: 2, roundsLost: 1, kills: 2, deaths: 1, metrics: { adr: 66.67, firstKillRate: 33.33, kast: 66.67 } } });
     expect((await reader.getMatchDetail(randomUUID(), matchId)).match).toBeNull();
     expect(await reader.compareAttackDefense(userId)).toMatchObject({ attack: { roundsPlayed: 2, roundsWon: 1, winRate: 50 }, defense: { roundsPlayed: 1, roundsWon: 1, winRate: 100 } });
     expect(await reader.compareMapPerformance(userId)).toMatchObject({ maps: [{ mapName: "Ascent", matches: 1, wins: 1, losses: 0, winRate: 100, kd: 2, adr: 66.67 }] });
     expect(await reader.getRoundEvidence(userId, matchId, 1)).toMatchObject({ scope: { queue: "competitive", sampleSize: 1 }, evidence: [{ matchId, roundNumber: 1, eventType: "first_death" }] });
     expect(await reader.findRoundEvidence(userId, "first_death", 5)).toMatchObject({ evidence: [{ matchId, roundNumber: 1, eventType: "first_death" }] });
+    expect(await reader.findRoundEvidence(userId, "kill", 5)).toMatchObject({ evidence: [{ matchId, roundNumber: 3, eventType: "kill" }] });
+    expect(await reader.getTimeWindow(userId, "2023-01-01T00:00:00.000Z", "2025-01-01T00:00:00.000Z")).toMatchObject({ metrics: { firstKillRate: 33.33, kast: 66.67 } });
+    expect(await reader.getActPerformance(userId)).toMatchObject({ acts: [{ act: "unknown", metrics: { firstKillRate: 33.33, kast: 66.67 } }] });
+    expect(await reader.getAgentPerformance(userId)).toMatchObject({ agents: [{ agent: "Unknown agent", metrics: { firstDeathRate: 33.33 } }] });
     expect((await reader.getRoundEvidence(randomUUID(), matchId, 1)).evidence).toEqual([]);
   }, 20_000);
 });

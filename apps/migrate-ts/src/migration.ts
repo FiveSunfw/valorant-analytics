@@ -105,6 +105,16 @@ const migrations = [{
     "ALTER TABLE sync_jobs DROP CONSTRAINT IF EXISTS sync_jobs_riot_account_id_fkey",
     "ALTER TABLE sync_jobs ADD CONSTRAINT sync_jobs_riot_account_id_fkey FOREIGN KEY (riot_account_id) REFERENCES riot_accounts(id) ON DELETE SET NULL"
   ]
+}, {
+  id: "20260916_0009",
+  statements: [
+    `CREATE TABLE IF NOT EXISTS knowledge_sources (source_id VARCHAR(128) PRIMARY KEY, url TEXT NOT NULL, title TEXT NOT NULL, author TEXT, published_at TIMESTAMPTZ, license_status VARCHAR(32) NOT NULL, license_notes TEXT, game_version VARCHAR(64), content_hash VARCHAR(64), status VARCHAR(32) NOT NULL DEFAULT 'raw', created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
+    `CREATE TABLE IF NOT EXISTS knowledge_assets (asset_id UUID PRIMARY KEY, source_id VARCHAR(128) NOT NULL REFERENCES knowledge_sources(source_id) ON DELETE CASCADE, asset_type VARCHAR(32) NOT NULL, storage_path TEXT, start_seconds NUMERIC, end_seconds NUMERIC, permission_evidence TEXT, review_status VARCHAR(32) NOT NULL DEFAULT 'pending', created_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
+    `CREATE TABLE IF NOT EXISTS knowledge_chunks (chunk_id UUID PRIMARY KEY, source_id VARCHAR(128) NOT NULL REFERENCES knowledge_sources(source_id) ON DELETE CASCADE, asset_id UUID REFERENCES knowledge_assets(asset_id) ON DELETE SET NULL, title TEXT NOT NULL, content TEXT NOT NULL, evidence_text TEXT NOT NULL, map_name VARCHAR(64), side VARCHAR(16), topics TEXT[] NOT NULL DEFAULT '{}', patch_version VARCHAR(64), source_trust VARCHAR(32) NOT NULL, claim_type VARCHAR(32) NOT NULL, review_status VARCHAR(32) NOT NULL DEFAULT 'pending', withdrawn_at TIMESTAMPTZ, stale_at TIMESTAMPTZ, search_vector TSVECTOR, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
+    "CREATE INDEX IF NOT EXISTS ix_knowledge_chunks_search ON knowledge_chunks USING GIN (search_vector)",
+    "CREATE INDEX IF NOT EXISTS ix_knowledge_chunks_filters ON knowledge_chunks (map_name, side, review_status)",
+    "ALTER TABLE round_kills ADD COLUMN IF NOT EXISTS is_first_kill BOOLEAN NOT NULL DEFAULT FALSE"
+  ]
 }];
 
 export async function migrate(pool: SqlExecutor): Promise<void> {

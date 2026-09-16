@@ -65,9 +65,21 @@ function unsupportedQuestion(question: string): boolean {
   return /(实时指挥|实时对局|赛前侦察|对手信息|其他玩家|他人.*puuid|作弊|外挂|api[_\s-]?key|access[_\s-]?token|隐藏\s*(mmr|elo)|hidden\s*(mmr|elo))/i.test(question);
 }
 
-function requiredContextTool(question: string, observations: readonly ToolObservation[]): "get_rank_benchmark" | "get_training_memory" | null {
-  if (/(同段位|基准|benchmark|中位数)/i.test(question) && !observations.some((observation) => observation.toolName === "get_rank_benchmark")) return "get_rank_benchmark";
-  if (/(训练目标|训练计划|记住|长期记忆|上次分析|我的目标|memory)/i.test(question) && !observations.some((observation) => observation.toolName === "get_training_memory")) return "get_training_memory";
+type RequiredContext = { toolName: "get_rank_benchmark" | "get_training_memory" | "get_act_performance" | "get_agent_performance" | "get_economy_performance" | "get_time_window" | "search_knowledge"; input: unknown };
+
+function requiredContextTool(question: string, observations: readonly ToolObservation[]): RequiredContext | null {
+  if (/(同段位|基准|benchmark|中位数)/i.test(question) && !observations.some((observation) => observation.toolName === "get_rank_benchmark")) return { toolName: "get_rank_benchmark", input: {} };
+  if (/(训练目标|训练计划|记住|长期记忆|上次分析|我的目标|memory)/i.test(question) && !observations.some((observation) => observation.toolName === "get_training_memory")) return { toolName: "get_training_memory", input: {} };
+  if (/(跨\s*Act|段位趋势|赛季表现|act performance)/i.test(question) && !observations.some((observation) => observation.toolName === "get_act_performance")) return { toolName: "get_act_performance", input: {} };
+  if (/(英雄维度|英雄表现|agent performance|different agents)/i.test(question) && !observations.some((observation) => observation.toolName === "get_agent_performance")) return { toolName: "get_agent_performance", input: {} };
+  if (/(经济局|经济表现|economy|full buy|半起)/i.test(question) && !observations.some((observation) => observation.toolName === "get_economy_performance")) return { toolName: "get_economy_performance", input: {} };
+  if (/(时间窗口|时间范围|from .* to |time window)/i.test(question) && !observations.some((observation) => observation.toolName === "get_time_window")) {
+    const dates = question.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z/g);
+    if (dates?.length && dates.length >= 2) return { toolName: "get_time_window", input: { from: dates[0], to: dates[1] } };
+  }
+  if (/(教学|架枪|点位|爆弹|战术执行|进攻思路|防守思路|teach|setup|lineup)/i.test(question) && !observations.some((observation) => observation.toolName === "search_knowledge")) {
+    return { toolName: "search_knowledge", input: { query: question, ...(/(Haven|隐士修所)/i.test(question) ? { mapName: "Haven" } : {}), ...(/防守|defense/i.test(question) ? { side: "defense" } : /进攻|attack/i.test(question) ? { side: "attack" } : {}) } };
+  }
   return null;
 }
 
@@ -138,7 +150,7 @@ export async function runAnalysis(options: AgentRunOptions): Promise<AgentRunRes
     usage.inputTokens += response.usage.inputTokens; usage.outputTokens += response.usage.outputTokens; usage.totalTokens += response.usage.totalTokens;
     const forcedContextTool = requiredContextTool(question, observations);
     const decision = response.decision.kind === "final" && forcedContextTool
-      ? { kind: "tool_call" as const, toolName: forcedContextTool, input: {} }
+      ? { kind: "tool_call" as const, toolName: forcedContextTool.toolName, input: forcedContextTool.input }
       : response.decision;
     if (decision.kind === "refusal") {
       return complete(analysisAnswerSchema.parse({

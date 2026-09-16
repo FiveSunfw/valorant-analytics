@@ -11,7 +11,9 @@ export type AnalyticsScope = {
 };
 
 export type PlayerSummary = { scope: AnalyticsScope; metrics: PlayerMetrics | null };
-export type RoundEvidence = { matchId: string; roundNumber: number; eventType: "first_death" | "death" | "kill" | "assist"; description: string };
+export type TimeWindowResult = { scope: AnalyticsScope; metrics: PlayerMetrics | null };
+export type RoundEventType = "first_death" | "death" | "kill" | "assist";
+export type RoundEvidence = { matchId: string; roundNumber: number; eventType: RoundEventType; description: string };
 export type MatchSummary = { matchId: string; mapName: string; playedAt: string; result: "win" | "loss" };
 export type MatchList = { scope: AnalyticsScope; matches: MatchSummary[] };
 export type MatchDetailResult = {
@@ -46,6 +48,13 @@ export type SyncJob = {
   failedMatchIds: string[]; errorCode?: string; errorMessage?: string;
   createdAt: string; updatedAt: string; completedAt?: string;
 };
+export type ActPerformance = { act: string; matches: number; tier: number | null; metrics: PlayerMetrics | null };
+export type ActPerformanceResult = { scope: AnalyticsScope; acts: ActPerformance[] };
+export type AgentPerformance = { agent: string; matches: number; wins: number; winRate: number; metrics: PlayerMetrics };
+export type AgentPerformanceResult = { scope: AnalyticsScope; agents: AgentPerformance[] };
+export type EconomyPerformance = { category: string; rounds: number; wins: number; winRate: number };
+export type EconomyPerformanceResult = { scope: AnalyticsScope; categories: EconomyPerformance[] };
+export type KnowledgeResult = { chunkId: string; sourceId: string; title: string; content: string; evidenceText: string; mapName?: string; side?: string; topics: string[]; patchVersion?: string; sourceTrust: string; sourceUrl: string };
 export type TrainingMemory = {
   id: string; kind: "goal" | "summary"; content: string; sourceRunId?: string;
   createdAt: string; updatedAt: string;
@@ -130,8 +139,85 @@ export class AnalyticsReader {
     return result.rowCount === 1;
   }
 
+  async hasCompletedAgentRun(userId: string, runId: string): Promise<boolean> {
+    const result = await this.pool.query(
+      "SELECT 1 FROM agent_runs WHERE run_id = $1 AND user_id = $2 AND status = 'completed' LIMIT 1",
+      [runId, userId]
+    );
+    return result.rowCount === 1;
+  }
+
   async getTrainingMemory(userId: string): Promise<{ memories: TrainingMemory[]; limitation: string }> {
     return { memories: await this.getTrainingMemories(userId), limitation: "Training memory is user-provided context, not match evidence." };
+  }
+
+  async getActPerformance(userId: string): Promise<ActPerformanceResult> {
+    const result = await this.pool.query<{ act: string; matches: string; tier: number | null; kills: string; deaths: string; score: string; rounds: string; damage: string; hs: string; body: string; legs: string; first_deaths: string; first_kills: string; kast: string; start: string | null; end: string | null }>(
+      `SELECT COALESCE(matches.season_id, 'unknown') AS act, COUNT(DISTINCT stats.match_id) AS matches,
+        MAX(stats.competitive_tier) AS tier, SUM(stats.kills) AS kills, SUM(stats.deaths) AS deaths,
+        SUM(stats.score) AS score, SUM(stats.rounds_played) AS rounds, COALESCE(SUM(d.damage),0) AS damage,
+        COALESCE(SUM(d.headshots),0) AS hs, COALESCE(SUM(d.bodyshots),0) AS body, COALESCE(SUM(d.legshots),0) AS legs,
+        COALESCE(SUM(a.first_deaths),0) AS first_deaths, COALESCE(SUM(a.first_kills),0) AS first_kills,
+        COALESCE(SUM(a.kast_rounds),0) AS kast, MIN(matches.game_start_millis) AS start, MAX(matches.game_start_millis) AS end
+       FROM riot_accounts accounts JOIN player_match_stats stats ON stats.riot_account_id = accounts.id
+       JOIN matches ON matches.match_id = stats.match_id
+       LEFT JOIN LATERAL (SELECT SUM(rd.damage) damage, SUM(rd.headshots) headshots, SUM(rd.bodyshots) bodyshots, SUM(rd.legshots) legshots FROM round_damage rd WHERE rd.match_id=stats.match_id AND rd.riot_account_id=accounts.id) d ON TRUE
+       LEFT JOIN LATERAL (SELECT COUNT(*) FILTER (WHERE rk.was_first_death) first_deaths, COUNT(*) FILTER (WHERE rk.was_first_kill) first_kills, COUNT(*) FILTER (WHERE NOT rk.was_victim OR rk.was_killer_or_assist) kast_rounds FROM (SELECT prs.round_number, COALESCE(bool_or(k.is_victim),FALSE) was_victim, COALESCE(bool_or(k.is_killer OR k.is_assistant),FALSE) was_killer_or_assist, COALESCE(bool_or(k.is_first_death),FALSE) was_first_death, COALESCE(bool_or(k.is_first_kill),FALSE) was_first_kill FROM player_round_stats prs LEFT JOIN round_kills k ON k.match_id=prs.match_id AND k.riot_account_id=prs.riot_account_id AND k.round_number=prs.round_number WHERE prs.match_id=stats.match_id AND prs.riot_account_id=accounts.id GROUP BY prs.round_number) rk) a ON TRUE
+       WHERE accounts.user_id=$1 AND matches.queue_id=$2 AND matches.is_ranked=TRUE AND matches.is_completed=TRUE
+       GROUP BY COALESCE(matches.season_id, 'unknown') ORDER BY start DESC`, [userId, COMPETITIVE_QUEUE_ID]
+    );
+    const timestamps = result.rows.flatMap((row) => [row.start, row.end].filter((value): value is string => value !== null)).map(Number);
+    return { scope: makeScope(result.rows.reduce((sum, row) => sum + Number(row.matches), 0), timestamps.length ? String(Math.min(...timestamps)) : null, timestamps.length ? String(Math.max(...timestamps)) : null), acts: result.rows.map((row) => ({ act: row.act, matches: Number(row.matches), tier: row.tier, metrics: Number(row.rounds) ? calculatePlayerMetrics({ score: Number(row.score), roundsPlayed: Number(row.rounds), kills: Number(row.kills), deaths: Number(row.deaths), totalDamage: Number(row.damage), headshots: Number(row.hs), bodyshots: Number(row.body), legshots: Number(row.legs), firstDeaths: Number(row.first_deaths), firstKills: Number(row.first_kills), roundsWithKast: Number(row.kast) }) : null })) };
+  }
+
+  async getAgentPerformance(userId: string): Promise<AgentPerformanceResult> {
+    const result = await this.pool.query<{ agent: string | null; matches: string; wins: string; kills: string; deaths: string; score: string; rounds: string; damage: string; hs: string; body: string; legs: string; first_deaths: string; start: string | null; end: string | null }>(
+      `SELECT COALESCE(stats.character_id,'Unknown agent') agent, COUNT(*) matches,
+        COUNT(*) FILTER (WHERE wins.won) wins, SUM(stats.kills) kills, SUM(stats.deaths) deaths, SUM(stats.score) score,
+        SUM(stats.rounds_played) rounds, COALESCE(SUM(d.damage),0) damage, COALESCE(SUM(d.headshots),0) hs,
+        COALESCE(SUM(d.bodyshots),0) body, COALESCE(SUM(d.legshots),0) legs, COALESCE(SUM(fd.count),0) first_deaths,
+        MIN(matches.game_start_millis) start, MAX(matches.game_start_millis) end
+       FROM riot_accounts accounts JOIN player_match_stats stats ON stats.riot_account_id=accounts.id
+       JOIN matches ON matches.match_id=stats.match_id
+       LEFT JOIN LATERAL (SELECT COUNT(*) FILTER (WHERE rounds.winning_team=stats.team_id) > COUNT(*) FILTER (WHERE rounds.winning_team<>stats.team_id) won FROM match_rounds rounds WHERE rounds.match_id=matches.match_id) wins ON TRUE
+        LEFT JOIN LATERAL (SELECT SUM(rd.damage) damage, SUM(rd.headshots) headshots, SUM(rd.bodyshots) bodyshots, SUM(rd.legshots) legshots FROM round_damage rd WHERE rd.match_id=stats.match_id AND rd.riot_account_id=accounts.id) d ON TRUE
+       LEFT JOIN LATERAL (SELECT COUNT(*) count FROM round_kills rk WHERE rk.match_id=stats.match_id AND rk.riot_account_id=accounts.id AND rk.is_first_death) fd ON TRUE
+       WHERE accounts.user_id=$1 AND matches.queue_id=$2 AND matches.is_ranked=TRUE AND matches.is_completed=TRUE
+       GROUP BY stats.character_id ORDER BY matches DESC, agent`, [userId, COMPETITIVE_QUEUE_ID]
+    );
+    const timestamps = result.rows.flatMap((row) => [row.start, row.end].filter((value): value is string => value !== null)).map(Number);
+    return { scope: makeScope(result.rows.reduce((sum, row) => sum + Number(row.matches), 0), timestamps.length ? String(Math.min(...timestamps)) : null, timestamps.length ? String(Math.max(...timestamps)) : null), agents: result.rows.map((row) => ({ agent: row.agent ?? "Unknown agent", matches: Number(row.matches), wins: Number(row.wins), winRate: percentage(Number(row.wins), Number(row.matches)), metrics: calculatePlayerMetrics({ score: Number(row.score), roundsPlayed: Number(row.rounds), kills: Number(row.kills), deaths: Number(row.deaths), totalDamage: Number(row.damage), headshots: Number(row.hs), bodyshots: Number(row.body), legshots: Number(row.legs), firstDeaths: Number(row.first_deaths) }) })) };
+  }
+
+  async getEconomyPerformance(userId: string): Promise<EconomyPerformanceResult> {
+    const result = await this.pool.query<{ match_id: string; round_number: number; winning_team: string | null; team_id: string | null; economy: unknown }>(
+      `SELECT prs.match_id, prs.round_number, rounds.winning_team, stats.team_id, prs.economy
+       FROM riot_accounts accounts JOIN player_match_stats stats ON stats.riot_account_id=accounts.id
+       JOIN matches ON matches.match_id=stats.match_id JOIN player_round_stats prs ON prs.match_id=stats.match_id AND prs.riot_account_id=accounts.id
+       JOIN match_rounds rounds ON rounds.match_id=prs.match_id AND rounds.round_number=prs.round_number
+       WHERE accounts.user_id=$1 AND matches.queue_id=$2 AND matches.is_ranked=TRUE AND matches.is_completed=TRUE`, [userId, COMPETITIVE_QUEUE_ID]
+    );
+    const categories = new Map<string, { rounds: number; wins: number; available: boolean }>();
+    for (const row of result.rows) {
+      const economy = row.economy && typeof row.economy === "object" ? row.economy as Record<string, unknown> : {};
+      const value = Number(economy.loadoutValue ?? economy.loadout_value ?? economy.spent ?? economy.spentCredits);
+      const category = Number.isFinite(value) && value > 0 ? value >= 3900 ? "full_buy" : value >= 2000 ? "half_buy" : "low_buy" : "unavailable";
+      const current = categories.get(category) ?? { rounds: 0, wins: 0, available: category !== "unavailable" };
+      current.rounds += 1; current.wins += row.winning_team === row.team_id ? 1 : 0; categories.set(category, current);
+    }
+    return { scope: makeScope(new Set(result.rows.map((row) => row.match_id)).size, null, null), categories: [...categories].map(([category, value]) => ({ category, ...value, winRate: percentage(value.wins, value.rounds) })) };
+  }
+
+  async searchKnowledge(userId: string, query: string, mapName?: string, side?: "attack" | "defense", limit = 5): Promise<{ query: string; results: KnowledgeResult[]; limitation: string }> {
+    const result = await this.pool.query<KnowledgeRow>(
+      `SELECT c.chunk_id, c.source_id, c.title, c.content, c.evidence_text, c.map_name, c.side, c.topics, c.patch_version, c.source_trust, s.url
+       FROM knowledge_chunks c JOIN knowledge_sources s ON s.source_id=c.source_id
+       WHERE c.review_status='approved' AND c.withdrawn_at IS NULL AND (c.stale_at IS NULL OR c.stale_at > now())
+         AND ($1='' OR c.search_vector @@ plainto_tsquery('simple',$1) OR c.content ILIKE '%' || $1 || '%')
+         AND ($2::text IS NULL OR c.map_name=$2) AND ($3::text IS NULL OR c.side=$3)
+       ORDER BY ts_rank(c.search_vector, plainto_tsquery('simple',$1)) DESC, c.updated_at DESC LIMIT $4`, [query.trim(), mapName ?? null, side ?? null, Math.min(10, Math.max(1, limit))]
+    );
+    return { query, results: result.rows.map(toKnowledge), limitation: "知识内容是通用教学背景，不是当前玩家比赛事实。" };
   }
 
   async getRankBenchmark(userId: string): Promise<RankBenchmark> {
@@ -174,6 +260,26 @@ export class AnalyticsReader {
     return { available: true, tier, cohortPlayers, minimumPlayers, player, median: { kd: Number(row.kd), adr: Number(row.adr), acs: Number(row.acs), firstDeathRate: Number(row.first_death_rate) } };
   }
 
+  private async getActionTotals(userId: string, matchId?: string, from?: string, to?: string): Promise<{ firstKills: number; roundsWithKast: number }> {
+    const result = await this.pool.query<{ first_kills: string; kast_rounds: string }>(
+      `SELECT COUNT(*) FILTER (WHERE flags.was_first_kill) AS first_kills,
+        COUNT(*) FILTER (WHERE NOT flags.was_victim OR flags.was_killer_or_assist) AS kast_rounds
+       FROM (SELECT prs.match_id, prs.round_number, COALESCE(bool_or(rk.is_victim), FALSE) AS was_victim,
+         COALESCE(bool_or(rk.is_killer OR rk.is_assistant), FALSE) AS was_killer_or_assist,
+         COALESCE(bool_or(rk.is_first_kill), FALSE) AS was_first_kill
+         FROM riot_accounts accounts JOIN player_round_stats prs ON prs.riot_account_id=accounts.id
+         LEFT JOIN round_kills rk ON rk.match_id=prs.match_id AND rk.riot_account_id=prs.riot_account_id AND rk.round_number=prs.round_number
+         JOIN matches ON matches.match_id=prs.match_id
+         WHERE accounts.user_id=$1 AND matches.queue_id=$2 AND matches.is_ranked=TRUE AND matches.is_completed=TRUE
+           AND ($3::varchar IS NULL OR matches.match_id=$3)
+           AND ($4::bigint IS NULL OR matches.game_start_millis >= $4)
+           AND ($5::bigint IS NULL OR matches.game_start_millis <= $5)
+         GROUP BY prs.match_id, prs.round_number) flags`,
+      [userId, COMPETITIVE_QUEUE_ID, matchId ?? null, from ? Date.parse(from) : null, to ? Date.parse(to) : null]
+    );
+    return { firstKills: Number(result.rows[0]?.first_kills ?? 0), roundsWithKast: Number(result.rows[0]?.kast_rounds ?? 0) };
+  }
+
   async getPlayerSummary(userId: string): Promise<PlayerSummary> {
     const result = await this.pool.query<{
       match_count: string; period_start: string | null; period_end: string | null; kills: string; deaths: string;
@@ -200,14 +306,32 @@ export class AnalyticsReader {
     const sampleSize = Number(row.match_count);
     const scope = makeScope(sampleSize, row.period_start, row.period_end);
     if (!sampleSize || !Number(row.rounds_played)) return { scope, metrics: null };
+    const actionTotals = await this.getActionTotals(userId);
     return {
       scope,
       metrics: calculatePlayerMetrics({
         score: Number(row.score), roundsPlayed: Number(row.rounds_played), kills: Number(row.kills), deaths: Number(row.deaths),
         totalDamage: Number(row.damage), headshots: Number(row.headshots), bodyshots: Number(row.bodyshots),
-        legshots: Number(row.legshots), firstDeaths: Number(row.first_deaths)
+        legshots: Number(row.legshots), firstDeaths: Number(row.first_deaths), firstKills: actionTotals.firstKills, roundsWithKast: actionTotals.roundsWithKast
       })
     };
+  }
+
+  async getTimeWindow(userId: string, from: string, to: string): Promise<TimeWindowResult> {
+    const result = await this.pool.query<{ match_count: string; period_start: string | null; period_end: string | null; kills: string; deaths: string; score: string; rounds_played: string; damage: string; headshots: string; bodyshots: string; legshots: string; first_deaths: string }>(
+      `SELECT COUNT(DISTINCT stats.match_id) match_count, MIN(matches.game_start_millis) period_start, MAX(matches.game_start_millis) period_end,
+        COALESCE(SUM(stats.kills),0) kills, COALESCE(SUM(stats.deaths),0) deaths, COALESCE(SUM(stats.score),0) score, COALESCE(SUM(stats.rounds_played),0) rounds_played,
+        COALESCE(SUM(d.damage),0) damage, COALESCE(SUM(d.headshots),0) headshots, COALESCE(SUM(d.bodyshots),0) bodyshots, COALESCE(SUM(d.legshots),0) legshots, COALESCE(SUM(fd.count),0) first_deaths
+       FROM riot_accounts accounts JOIN player_match_stats stats ON stats.riot_account_id=accounts.id JOIN matches ON matches.match_id=stats.match_id
+       LEFT JOIN LATERAL (SELECT SUM(rd.damage) damage, SUM(rd.headshots) headshots, SUM(rd.bodyshots) bodyshots, SUM(rd.legshots) legshots FROM round_damage rd WHERE rd.match_id=stats.match_id AND rd.riot_account_id=accounts.id) d ON TRUE
+       LEFT JOIN LATERAL (SELECT COUNT(*) count FROM round_kills rk WHERE rk.match_id=stats.match_id AND rk.riot_account_id=accounts.id AND rk.is_first_death) fd ON TRUE
+       WHERE accounts.user_id=$1 AND matches.queue_id=$2 AND matches.is_ranked=TRUE AND matches.is_completed=TRUE AND matches.game_start_millis BETWEEN $3 AND $4`,
+      [userId, COMPETITIVE_QUEUE_ID, Date.parse(from), Date.parse(to)]
+    );
+    const row = result.rows[0]; const sampleSize = Number(row.match_count); const scope = makeScope(sampleSize, row.period_start, row.period_end);
+    if (!sampleSize || !Number(row.rounds_played)) return { scope, metrics: null };
+    const actionTotals = await this.getActionTotals(userId, undefined, from, to);
+    return { scope, metrics: calculatePlayerMetrics({ score: Number(row.score), roundsPlayed: Number(row.rounds_played), kills: Number(row.kills), deaths: Number(row.deaths), totalDamage: Number(row.damage), headshots: Number(row.headshots), bodyshots: Number(row.bodyshots), legshots: Number(row.legshots), firstDeaths: Number(row.first_deaths), firstKills: actionTotals.firstKills, roundsWithKast: actionTotals.roundsWithKast }) };
   }
 
   async getRoundEvidence(userId: string, matchId: string, roundNumber: number): Promise<RoundEvidenceResult> {
@@ -228,7 +352,7 @@ export class AnalyticsReader {
     return { scope: makeScope(evidence.length ? 1 : 0, null, null), evidence };
   }
 
-  async findRoundEvidence(userId: string, eventType: "first_death", limit: number): Promise<RoundEvidenceResult> {
+  async findRoundEvidence(userId: string, eventType: RoundEventType, limit: number): Promise<RoundEvidenceResult> {
     const result = await this.pool.query<{
       match_id: string; round_number: number; is_killer: boolean; is_victim: boolean; is_assistant: boolean;
       is_first_death: boolean; round_time_millis: number | null; finishing_item: string | null;
@@ -240,7 +364,12 @@ export class AnalyticsReader {
        JOIN matches ON matches.match_id = stats.match_id
        JOIN round_kills kills ON kills.match_id = stats.match_id AND kills.riot_account_id = accounts.id
        WHERE accounts.user_id = $1 AND matches.queue_id = $2 AND matches.is_ranked = TRUE
-         AND matches.is_completed = TRUE AND kills.is_first_death = ($3 = 'first_death')
+         AND matches.is_completed = TRUE AND CASE $3
+           WHEN 'first_death' THEN kills.is_first_death
+           WHEN 'death' THEN kills.is_victim
+           WHEN 'kill' THEN kills.is_killer
+           WHEN 'assist' THEN kills.is_assistant
+           ELSE FALSE END
        ORDER BY matches.game_start_millis DESC NULLS LAST, kills.round_number DESC
        LIMIT $4`,
       [userId, COMPETITIVE_QUEUE_ID, eventType, limit]
@@ -313,6 +442,7 @@ export class AnalyticsReader {
     if (!row) return { scope: makeScope(0, null, null), match: null };
     const roundsWon = Number(row.rounds_won);
     const roundsLost = Number(row.rounds_lost);
+    const actionTotals = await this.getActionTotals(userId, matchId);
     return {
       scope: makeScope(1, row.game_start_millis, row.game_start_millis),
       match: {
@@ -328,7 +458,7 @@ export class AnalyticsReader {
         metrics: calculatePlayerMetrics({
           score: Number(row.score), roundsPlayed: Number(row.rounds_played), kills: Number(row.kills), deaths: Number(row.deaths),
           totalDamage: Number(row.damage), headshots: Number(row.headshots), bodyshots: Number(row.bodyshots),
-          legshots: Number(row.legshots), firstDeaths: Number(row.first_deaths)
+          legshots: Number(row.legshots), firstDeaths: Number(row.first_deaths), firstKills: actionTotals.firstKills, roundsWithKast: actionTotals.roundsWithKast
         })
       }
     };
@@ -513,6 +643,7 @@ type MemoryRow = {
   id: string; kind: "goal" | "summary"; content: string; source_run_id: string | null;
   created_at: Date | string; updated_at: Date | string;
 };
+type KnowledgeRow = { chunk_id: string; source_id: string; title: string; content: string; evidence_text: string; map_name: string | null; side: string | null; topics: string[] | null; patch_version: string | null; source_trust: string; url: string };
 
 function asIso(value: Date | string | null | undefined): string | undefined {
   return value == null ? undefined : new Date(value).toISOString();
@@ -547,6 +678,10 @@ function toTrainingMemory(row: MemoryRow): TrainingMemory {
     createdAt: asIso(row.created_at)!,
     updatedAt: asIso(row.updated_at)!
   };
+}
+
+function toKnowledge(row: KnowledgeRow): KnowledgeResult {
+  return { chunkId: row.chunk_id, sourceId: row.source_id, title: row.title, content: row.content, evidenceText: row.evidence_text, ...(row.map_name ? { mapName: row.map_name } : {}), ...(row.side ? { side: row.side } : {}), topics: row.topics ?? [], ...(row.patch_version ? { patchVersion: row.patch_version } : {}), sourceTrust: row.source_trust, sourceUrl: row.url };
 }
 
 function aggregatePeriod(rows: Array<{

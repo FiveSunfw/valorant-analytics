@@ -107,11 +107,11 @@ async function persistRoundEvidence(
     if (!killer && !victim && !assistant) continue;
     await client.query(
       `INSERT INTO round_kills (match_id, riot_account_id, round_number, kill_index, is_killer, is_victim,
-        is_assistant, game_time_millis, is_first_death, round_time_millis, finishing_damage_type,
+        is_assistant, game_time_millis, is_first_death, is_first_kill, round_time_millis, finishing_damage_type,
         finishing_item, is_secondary_fire_mode)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
       [matchId, riotAccountId, roundNumber, index, killer, victim, assistant, kill.gameTime,
-        victim && firstKill === firstKillIdentity(kill), kill.roundTime, kill.finishingDamage?.damageType,
+        victim && firstKill === firstKillIdentity(kill), killer && firstKill === firstKillIdentity(kill), kill.roundTime, kill.finishingDamage?.damageType,
         kill.finishingDamage?.damageItem, kill.finishingDamage?.isSecondaryFireMode]
     );
   }
