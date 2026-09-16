@@ -16,13 +16,14 @@ import {
   riotRsoUserinfoUrl,
   tokenEncryptionKey
 } from "./config.js";
-import { analysisModelInputUsdPerMillion, analysisModelOutputUsdPerMillion, enableDemoMode } from "./config.js";
+import { analysisModelInputUsdPerMillion, analysisModelOutputUsdPerMillion, enableDemoMode, enableEvalMode } from "./config.js";
 import { PostgresRiotOAuthStore, RiotOAuthError, RiotOAuthService } from "./riot-oauth.js";
 import { AnalyticsReader } from "./analytics-reader.js";
 import { AgentRunError, createDefaultAnalysis, type AgentModel } from "./agent-runtime.js";
 import { createAgentModelFromEnvironment } from "./openai-compatible-model.js";
 import { PostgresAgentTraceSink, type AgentTraceSink } from "./agent-trace.js";
 import { DemoSessionError, DemoSessionService } from "./demo-session.js";
+import { isDemoFixtureProfile, type DemoFixtureProfile } from "./demo-fixtures.js";
 
 const SESSION_COOKIE = "valorant_session";
 
@@ -34,7 +35,8 @@ type RuntimeDependencies = {
   agentModel?: AgentModel;
   agentTrace?: AgentTraceSink | null;
   demoMode?: boolean;
-  demoSession?: { create(): Promise<{ token: string; expiresAt: Date }> };
+  evalMode?: boolean;
+  demoSession?: { create(profile?: DemoFixtureProfile): Promise<{ token: string; expiresAt: Date }> };
 };
 
 function readCookie(header: string | undefined, name: string): string | undefined {
@@ -78,6 +80,7 @@ export function buildApp(dependencies: RuntimeDependencies = {
   const agentModel = dependencies.agentModel ?? createAgentModelFromEnvironment();
   const agentTrace = dependencies.agentTrace === undefined ? new PostgresAgentTraceSink(dependencies.pool) : dependencies.agentTrace;
   const demoMode = dependencies.demoMode ?? enableDemoMode;
+  const evalMode = dependencies.evalMode ?? enableEvalMode;
   const demoSession = dependencies.demoSession ?? new DemoSessionService(dependencies.pool);
 
   app.get("/health", async () => {
@@ -110,6 +113,15 @@ export function buildApp(dependencies: RuntimeDependencies = {
       const session = await demoSession.create();
       reply.header("Set-Cookie", sessionCookie(session.token, Math.floor((session.expiresAt.getTime() - Date.now()) / 1_000)));
       return reply.send({ mode: "demo" });
+    });
+  }
+  if (evalMode && process.env.NODE_ENV !== "production") {
+    app.post("/auth/eval", async (request, reply) => {
+      const profile = (request.body as { profile?: unknown } | undefined)?.profile;
+      if (!isDemoFixtureProfile(profile)) return reply.code(400).send({ error: "invalid_fixture_profile", message: "A fixed fixture profile is required" });
+      const session = await demoSession.create(profile);
+      reply.header("Set-Cookie", sessionCookie(session.token, Math.floor((session.expiresAt.getTime() - Date.now()) / 1_000)));
+      return reply.send({ mode: "eval", profile });
     });
   }
   app.post("/agent/analyze", async (request, reply) => {

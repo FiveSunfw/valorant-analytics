@@ -1,7 +1,8 @@
 import type { Pool } from "pg";
 import { PostgresRiotOAuthStore, type ProductSession } from "./riot-oauth.js";
+import { DEMO_FIXTURES, type DemoFixtureProfile } from "./demo-fixtures.js";
 
-export const DEMO_USER_ID = "10000000-0000-4000-8000-000000000001";
+export { DEMO_USER_ID } from "./demo-fixtures.js";
 
 export class DemoSessionError extends Error {
   constructor() {
@@ -17,8 +18,8 @@ export class DemoSessionService {
     this.sessions = new PostgresRiotOAuthStore(pool);
   }
 
-  async create(): Promise<ProductSession> {
-    const session = await this.sessions.createSessionForUser(DEMO_USER_ID);
+  async create(profile: DemoFixtureProfile = "full"): Promise<ProductSession> {
+    const session = await this.sessions.createSessionForUser(DEMO_FIXTURES[profile].userId);
     if (!session) throw new DemoSessionError();
     return session;
   }

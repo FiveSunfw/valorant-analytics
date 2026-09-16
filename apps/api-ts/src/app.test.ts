@@ -24,6 +24,18 @@ describe("Riot RSO routes", () => {
     await enabled.close();
   });
 
+  it("registers the closed eval fixture login only when explicitly enabled", async () => {
+    const disabled = buildApp({ ...inertDependencies, evalMode: false, agentTrace: null });
+    expect((await disabled.inject({ method: "POST", url: "/auth/eval", payload: { profile: "full" } })).statusCode).toBe(404);
+    await disabled.close();
+    const profiles: string[] = [];
+    const enabled = buildApp({ ...inertDependencies, evalMode: true, agentTrace: null, demoSession: { create: async (profile = "full") => { profiles.push(profile); return { token: "eval-session", expiresAt }; } } });
+    expect((await enabled.inject({ method: "POST", url: "/auth/eval", payload: { profile: "small", userId: "other" } })).statusCode).toBe(200);
+    expect((await enabled.inject({ method: "POST", url: "/auth/eval", payload: { profile: "other" } })).statusCode).toBe(400);
+    expect(profiles).toEqual(["small"]);
+    await enabled.close();
+  });
+
   it("starts RSO with an HttpOnly product session cookie", async () => {
     const calls: string[] = [];
     const app = buildApp({
