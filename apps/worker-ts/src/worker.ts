@@ -104,7 +104,11 @@ async function handleAccountMessage(
   try {
     await updateAccountSyncJob(pool, job.jobId, { status: "running", errorCode: null, errorMessage: null });
     const account = await pool.query<{ puuid: string }>("SELECT puuid FROM riot_accounts WHERE id = $1", [job.riotAccountId]);
-    if (!account.rowCount) throw new Error("authorized Riot account was not found");
+    if (!account.rowCount) {
+      await updateAccountSyncJob(pool, job.jobId, { status: "failed", errorCode: "account_disconnected", errorMessage: "Riot account was disconnected", completed: true });
+      channel.ack(message);
+      return;
+    }
     const fetched = await client.getCompletedCompetitiveMatches(account.rows[0].puuid);
     const persisted = await persistFixtureMatches(job.riotAccountId, fetched.matches.slice(0, job.maxMatches), pool);
     await updateAccountSyncJob(pool, job.jobId, {

@@ -6,7 +6,7 @@ const migrations = [{
   id: "20260905_0002",
   statements: [
     `CREATE TABLE IF NOT EXISTS users (id UUID PRIMARY KEY, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
-    `CREATE TABLE IF NOT EXISTS riot_accounts (id UUID PRIMARY KEY, user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE, rso_subject VARCHAR(255) NOT NULL UNIQUE, puuid VARCHAR(128) NOT NULL UNIQUE, game_name VARCHAR(64), tag_line VARCHAR(16), platform VARCHAR(16) NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
+    `CREATE TABLE IF NOT EXISTS riot_accounts (id UUID PRIMARY KEY, user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE, rso_subject VARCHAR(255) NOT NULL UNIQUE, puuid VARCHAR(128) NOT NULL UNIQUE, game_name VARCHAR(64), tag_line VARCHAR(16), platform VARCHAR(16) NOT NULL, is_demo BOOLEAN NOT NULL DEFAULT FALSE, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS riot_tokens (id UUID PRIMARY KEY, riot_account_id UUID NOT NULL UNIQUE REFERENCES riot_accounts(id) ON DELETE CASCADE, encrypted_access_token BYTEA NOT NULL, encrypted_refresh_token BYTEA, access_token_expires_at TIMESTAMPTZ, scopes JSONB NOT NULL DEFAULT '[]'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS matches (match_id VARCHAR(128) PRIMARY KEY, region VARCHAR(16), map_id TEXT, game_version VARCHAR(64), game_length_millis BIGINT, game_start_millis BIGINT, provisioning_flow_id VARCHAR(64), is_completed BOOLEAN, custom_game_name TEXT, queue_id VARCHAR(64), game_mode VARCHAR(64), is_ranked BOOLEAN, season_id VARCHAR(128), premier_match_info JSONB, raw_payload JSONB NOT NULL, fetched_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
     "CREATE INDEX IF NOT EXISTS ix_matches_game_start_millis ON matches (game_start_millis)",
@@ -70,7 +70,7 @@ const migrations = [{
     `CREATE TABLE IF NOT EXISTS sync_jobs (
       job_id UUID PRIMARY KEY,
       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      riot_account_id UUID NOT NULL REFERENCES riot_accounts(id) ON DELETE CASCADE,
+      riot_account_id UUID REFERENCES riot_accounts(id) ON DELETE SET NULL,
       status VARCHAR(32) NOT NULL,
       imported INTEGER NOT NULL DEFAULT 0,
       skipped INTEGER NOT NULL DEFAULT 0,
@@ -91,7 +91,19 @@ const migrations = [{
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )`,
-    "CREATE INDEX IF NOT EXISTS ix_training_memories_user_updated_at ON training_memories (user_id, updated_at DESC)"
+    "CREATE INDEX IF NOT EXISTS ix_training_memories_user_updated_at ON training_memories (user_id, updated_at DESC)",
+    "ALTER TABLE riot_accounts ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE sync_jobs ALTER COLUMN riot_account_id DROP NOT NULL",
+    "ALTER TABLE sync_jobs DROP CONSTRAINT IF EXISTS sync_jobs_riot_account_id_fkey",
+    "ALTER TABLE sync_jobs ADD CONSTRAINT sync_jobs_riot_account_id_fkey FOREIGN KEY (riot_account_id) REFERENCES riot_accounts(id) ON DELETE SET NULL"
+  ]
+}, {
+  id: "20260916_0008",
+  statements: [
+    "ALTER TABLE riot_accounts ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE sync_jobs ALTER COLUMN riot_account_id DROP NOT NULL",
+    "ALTER TABLE sync_jobs DROP CONSTRAINT IF EXISTS sync_jobs_riot_account_id_fkey",
+    "ALTER TABLE sync_jobs ADD CONSTRAINT sync_jobs_riot_account_id_fkey FOREIGN KEY (riot_account_id) REFERENCES riot_accounts(id) ON DELETE SET NULL"
   ]
 }];
 

@@ -134,3 +134,59 @@ describe("Riot RSO routes", () => {
     await app.close();
   });
 });
+
+describe("account data routes", () => {
+  const session = { userId: "user-1", token: "session-token", expiresAt };
+
+  function makeApp(overrides: Record<string, unknown> = {}) {
+    const pool = {
+      query: async (sql: string) => {
+        if (sql.includes("SELECT rso_subject FROM riot_accounts")) return { rows: [{ rso_subject: "demo-rso-full" }], rowCount: 1 };
+        if (sql.includes("SELECT game_name, tag_line, rso_subject")) return { rows: [{ game_name: "Fixture", tag_line: "DEMO", rso_subject: "demo-rso-full" }], rowCount: 1 };
+        return { rows: [], rowCount: 0 };
+      },
+      end: async () => undefined
+    };
+    return buildApp({
+      pool: pool as never,
+      redis: { quit: async () => "OK" } as never,
+      oauth: { getSession: async (token?: string) => token === "session-token" ? session : null } as never,
+      analyticsReader: {
+        getRiotAccountId: async () => "account-1",
+        findActiveSyncJob: async () => null,
+        createSyncJob: async (jobId: string) => ({ jobId, status: "queued", imported: 0, skipped: 0, failedMatchIds: [], createdAt: "2030-01-01T00:00:00.000Z", updatedAt: "2030-01-01T00:00:00.000Z" }),
+        getSyncJob: async (_userId: string, jobId: string) => ({ jobId, status: "completed", imported: 1, skipped: 0, failedMatchIds: [], createdAt: "2030-01-01T00:00:00.000Z", updatedAt: "2030-01-01T00:00:00.000Z" }),
+        updateSyncJob: async () => undefined,
+        getTrainingMemories: async () => [],
+        createTrainingMemory: async (_userId: string, kind: "goal" | "summary", content: string, sourceRunId?: string) => ({ id: "memory-1", kind, content, sourceRunId, createdAt: "2030-01-01T00:00:00.000Z", updatedAt: "2030-01-01T00:00:00.000Z" }),
+        updateTrainingMemory: async (_userId: string, id: string) => id === "memory-1" ? { id, kind: "goal", content: "updated", createdAt: "2030-01-01T00:00:00.000Z", updatedAt: "2030-01-01T00:00:00.000Z" } : null,
+        deleteTrainingMemory: async (_userId: string, id: string) => id === "memory-1",
+        getRankBenchmark: async () => ({ available: false, tier: null, cohortPlayers: 0, minimumPlayers: 5, player: null, median: null, limitation: "sample too small" })
+      } as never,
+      syncEnqueuer: async (job) => job.jobId,
+      agentTrace: null,
+      ...overrides
+    });
+  }
+
+  it("requires the current session and does not expose another user's memory", async () => {
+    const app = makeApp();
+    expect((await app.inject({ method: "GET", url: "/memory" })).statusCode).toBe(401);
+    expect((await app.inject({ method: "PUT", url: "/memory/other", headers: { cookie: "valorant_session=session-token" }, payload: { kind: "goal", content: "no" } })).statusCode).toBe(404);
+    await app.close();
+  });
+
+  it("keeps sync idempotent and returns the sample limitation for the benchmark", async () => {
+    const app = makeApp({ analyticsReader: {
+      getRiotAccountId: async () => "account-1",
+      findActiveSyncJob: async () => ({ jobId: "11111111-1111-4111-8111-111111111111", status: "running", imported: 0, skipped: 0, failedMatchIds: [], createdAt: "2030-01-01T00:00:00.000Z", updatedAt: "2030-01-01T00:00:00.000Z" }),
+      getRankBenchmark: async () => ({ available: false, tier: 2, cohortPlayers: 2, minimumPlayers: 5, player: null, median: null, limitation: "Only 2 eligible same-tier players are available; at least 5 are required." })
+    } });
+    const sync = await app.inject({ method: "POST", url: "/sync", headers: { cookie: "valorant_session=session-token" }, payload: {} });
+    expect(sync.statusCode).toBe(202);
+    expect(sync.json().jobId).toBe("11111111-1111-4111-8111-111111111111");
+    const benchmark = await app.inject({ method: "GET", url: "/benchmark", headers: { cookie: "valorant_session=session-token" } });
+    expect(benchmark.json()).toMatchObject({ available: false, cohortPlayers: 2, minimumPlayers: 5 });
+    await app.close();
+  });
+});

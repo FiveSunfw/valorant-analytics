@@ -139,7 +139,7 @@ export class AnalyticsReader {
       `SELECT stats.competitive_tier FROM riot_accounts accounts
        JOIN player_match_stats stats ON stats.riot_account_id = accounts.id
        JOIN matches ON matches.match_id = stats.match_id
-       WHERE accounts.user_id = $1 AND matches.queue_id = $2 AND matches.is_ranked = TRUE AND matches.is_completed = TRUE
+       WHERE accounts.user_id = $1 AND accounts.is_demo = FALSE AND matches.queue_id = $2 AND matches.is_ranked = TRUE AND matches.is_completed = TRUE
        ORDER BY matches.game_start_millis DESC NULLS LAST LIMIT 1`, [userId, COMPETITIVE_QUEUE_ID]
     );
     const tier = tierResult.rows[0]?.competitive_tier ?? null;
@@ -157,7 +157,7 @@ export class AnalyticsReader {
         JOIN matches ON matches.match_id = stats.match_id
         LEFT JOIN LATERAL (SELECT SUM(rd.damage) AS damage FROM round_damage rd WHERE rd.match_id = stats.match_id AND rd.riot_account_id = accounts.id) damage ON TRUE
         LEFT JOIN LATERAL (SELECT COUNT(*) AS count FROM round_kills rk WHERE rk.match_id = stats.match_id AND rk.riot_account_id = accounts.id AND rk.is_first_death = TRUE) first_deaths ON TRUE
-        WHERE matches.queue_id = $1 AND matches.is_ranked = TRUE AND matches.is_completed = TRUE
+        WHERE accounts.is_demo = FALSE AND matches.queue_id = $1 AND matches.is_ranked = TRUE AND matches.is_completed = TRUE
         GROUP BY accounts.user_id
       )
       SELECT COUNT(*) FILTER (WHERE matches >= $3 AND tier = $2) AS cohort_players,

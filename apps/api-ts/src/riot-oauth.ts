@@ -252,10 +252,10 @@ export class PostgresRiotOAuthStore implements RiotOAuthStore {
   async saveAuthorizedAccount(account: AuthorizedAccount): Promise<void> {
     const riotAccountId = randomUUID();
     const saved = await this.pool.query<{ id: string }>(
-      `INSERT INTO riot_accounts (id, user_id, rso_subject, puuid, game_name, tag_line, platform)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO riot_accounts (id, user_id, rso_subject, puuid, game_name, tag_line, platform, is_demo)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE)
        ON CONFLICT (rso_subject) DO UPDATE SET user_id = EXCLUDED.user_id, puuid = EXCLUDED.puuid,
-         game_name = EXCLUDED.game_name, tag_line = EXCLUDED.tag_line, platform = EXCLUDED.platform, updated_at = now()
+         game_name = EXCLUDED.game_name, tag_line = EXCLUDED.tag_line, platform = EXCLUDED.platform, is_demo = FALSE, updated_at = now()
        RETURNING id`,
       [riotAccountId, account.userId, account.rsoSubject, account.puuid, account.gameName ?? null, account.tagLine ?? null, account.platform]
     );
@@ -272,6 +272,25 @@ export class PostgresRiotOAuthStore implements RiotOAuthStore {
   }
 
   async disconnectUser(userId: string): Promise<void> {
-    await this.pool.query("DELETE FROM riot_accounts WHERE user_id = $1", [userId]);
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const accounts = await client.query<{ id: string }>("SELECT id FROM riot_accounts WHERE user_id = $1", [userId]);
+      if (accounts.rowCount) {
+        await client.query(
+          `UPDATE sync_jobs SET status = 'failed', error_code = 'account_disconnected',
+             error_message = 'Riot account was disconnected', updated_at = now(), completed_at = now()
+           WHERE user_id = $1 AND status IN ('queued', 'running')`, [userId]
+        );
+        await client.query("DELETE FROM riot_accounts WHERE user_id = $1", [userId]);
+        await client.query("DELETE FROM matches WHERE NOT EXISTS (SELECT 1 FROM player_match_stats WHERE player_match_stats.match_id = matches.match_id)");
+      }
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 }

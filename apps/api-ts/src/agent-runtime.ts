@@ -65,6 +65,12 @@ function unsupportedQuestion(question: string): boolean {
   return /(实时指挥|实时对局|赛前侦察|对手信息|其他玩家|他人.*puuid|作弊|外挂|api[_\s-]?key|access[_\s-]?token|隐藏\s*(mmr|elo)|hidden\s*(mmr|elo))/i.test(question);
 }
 
+function requiredContextTool(question: string, observations: readonly ToolObservation[]): "get_rank_benchmark" | "get_training_memory" | null {
+  if (/(同段位|基准|benchmark|中位数)/i.test(question) && !observations.some((observation) => observation.toolName === "get_rank_benchmark")) return "get_rank_benchmark";
+  if (/(训练目标|训练计划|记住|长期记忆|上次分析|我的目标|memory)/i.test(question) && !observations.some((observation) => observation.toolName === "get_training_memory")) return "get_training_memory";
+  return null;
+}
+
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -130,7 +136,10 @@ export async function runAnalysis(options: AgentRunOptions): Promise<AgentRunRes
     }
     steps += 1;
     usage.inputTokens += response.usage.inputTokens; usage.outputTokens += response.usage.outputTokens; usage.totalTokens += response.usage.totalTokens;
-    const decision = response.decision;
+    const forcedContextTool = requiredContextTool(question, observations);
+    const decision = response.decision.kind === "final" && forcedContextTool
+      ? { kind: "tool_call" as const, toolName: forcedContextTool, input: {} }
+      : response.decision;
     if (decision.kind === "refusal") {
       return complete(analysisAnswerSchema.parse({
         conclusion: decision.message, playerEvidence: [], knowledgeEvidence: [], confidence: "high",

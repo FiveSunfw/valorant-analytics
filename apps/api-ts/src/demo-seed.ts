@@ -9,7 +9,7 @@ try {
   await client.query("BEGIN");
   for (const [profile, fixture] of Object.entries(DEMO_FIXTURES)) {
     await client.query("INSERT INTO users (id) VALUES ($1) ON CONFLICT (id) DO NOTHING", [fixture.userId]);
-    await client.query(`INSERT INTO riot_accounts (id,user_id,rso_subject,puuid,game_name,tag_line,platform) VALUES ($1,$2,$3,$4,$5,'DEMO','ap') ON CONFLICT (id) DO UPDATE SET game_name=EXCLUDED.game_name`, [fixture.accountId, fixture.userId, `demo-rso-${profile}`, `demo-puuid-${profile}`, `Fixture${profile}`]);
+    await client.query(`INSERT INTO riot_accounts (id,user_id,rso_subject,puuid,game_name,tag_line,platform,is_demo) VALUES ($1,$2,$3,$4,$5,'DEMO','ap',TRUE) ON CONFLICT (id) DO UPDATE SET game_name=EXCLUDED.game_name,is_demo=TRUE`, [fixture.accountId, fixture.userId, `demo-rso-${profile}`, `demo-puuid-${profile}`, `Fixture${profile}`]);
     for (let matchIndex = 1; matchIndex <= fixture.matches; matchIndex += 1) {
       const matchId = `demo-${profile}-${matchIndex}`;
       await client.query(`INSERT INTO matches (match_id,map_id,game_start_millis,queue_id,game_mode,is_ranked,is_completed,raw_payload) VALUES ($1,$2,$3,'competitive','Competitive',TRUE,TRUE,'{}'::jsonb) ON CONFLICT (match_id) DO UPDATE SET game_start_millis=EXCLUDED.game_start_millis`, [matchId, matchIndex % 2 === 0 ? "Haven" : "Ascent", 1_789_000_000_000 + matchIndex * 3_600_000]);
