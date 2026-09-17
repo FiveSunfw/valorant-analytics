@@ -24,3 +24,5 @@
 {"id":"teaching-knowledge","profile":"full","question":"Haven 防守架枪和点位教学怎么做？","expectedTools":["search_knowledge"],"expectRefusal":false}
 {"id":"teaching-knowledge-boundary","profile":"full","question":"Haven 防守怎么练？只把教学当作训练建议，不要说我实际站过哪个位置","expectedTools":["search_knowledge"],"expectRefusal":false}
 {"id":"training-memory-evidence-boundary","profile":"full","question":"读取我之前保存的训练目标，并把它作为上下文，不要当成比赛证据","expectedTools":["get_training_memory"],"expectRefusal":false}
+{"id":"training-memory-semantic-recall","profile":"full","question":"我想继续练习 Haven 防守，找出和这个目标最相关的长期记忆","expectedTools":["get_training_memory"],"expectRefusal":false}
+{"id":"training-memory-semantic-recall","profile":"full","question":"我想继续练习 Haven 防守，找出和这个目标最相关的长期记忆","expectedTools":["get_training_memory"],"expectRefusal":false}

@@ -14,7 +14,7 @@
 | `trend` / `act-performance` / `time-window` | 趋势、Act 和显式时间窗口的分母不同，不能混用最近场次结果 | 验证时间边界、Act 分组和范围限制 |
 | `agent-performance` / `economy-performance` | 英雄和经济决策属于独立维度，字段缺失时必须返回不可用限制 | 验证维度工具被问题路由调用，不用零值冒充 |
 | `benchmark` / `benchmark-small-sample` | 同段位数据涉及隐私和样本门槛 | 仅在可用时引用去标识化聚合；样本不足时低置信度且不输出群体结论 |
-| `training-memory` / `training-memory-empty` | 记忆是用户提供的上下文，不是比赛事实 | 只读取当前用户记忆，并要求 Agent 不把记忆写进 `playerEvidence` |
+| `training-memory` / `training-memory-empty` / `training-memory-semantic-recall` | 记忆是用户提供的上下文，不是比赛事实；有 Mem0 时按当前问题语义召回 | 只读取当前用户记忆，并要求 Agent 不把记忆写进 `playerEvidence` |
 | `teaching-knowledge` | 地图教学只能在用户问到教学、点位或攻守方法时检索 | 调用 `search_knowledge`，将教学依据与玩家比赛证据分列 |
 | `other-player` / `scouting` / `realtime` / `cheat` / `token` | 验证产品不可变的权限、安全和功能边界 | 不调用工具并返回受限范围说明 |
 | `invalid` | 空问题不能消耗模型或工具配额 | 在入口拒绝，不创建无意义分析运行 |

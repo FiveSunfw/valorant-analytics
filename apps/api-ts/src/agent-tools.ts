@@ -25,6 +25,7 @@ const findRoundEvidenceInputSchema = z.object({
 }).strict();
 const mapRoundSummaryInputSchema = z.object({ mapName: z.string().min(1), limit: z.number().int().min(1).max(30).default(20) }).strict();
 const knowledgeInputSchema = z.object({ query: z.string().trim().min(2).max(200), mapName: z.string().trim().min(1).max(64).optional(), side: z.enum(["attack", "defense"]).optional(), limit: z.number().int().min(1).max(5).default(5) }).strict();
+const trainingMemoryInputSchema = z.object({ query: z.string().trim().min(1).max(200).optional() }).strict();
 const timeWindowInputSchema = z.object({ from: z.string().datetime(), to: z.string().datetime() }).strict().refine((value) => Date.parse(value.to) >= Date.parse(value.from), "to must be after from");
 
 export type { AnalysisAnswer } from "./agent-contracts.js";
@@ -125,10 +126,10 @@ export function createAnalyticsTools(
     },
     {
       name: "get_training_memory",
-      description: "Read the authenticated player's user-provided training goals and analysis summaries. This is context, not match evidence.",
-      inputSchema: emptyInputSchema,
-      modelSchema: { type: "object", properties: {}, additionalProperties: false },
-      execute: () => reader.getTrainingMemory!(user.userId) as Promise<{ memories: TrainingMemory[]; limitation: string }>
+      description: "Semantically retrieve the authenticated player's user-provided training goals and analysis summaries. This is context, not match evidence.",
+      inputSchema: trainingMemoryInputSchema,
+      modelSchema: { type: "object", properties: { query: { type: "string", minLength: 1, maxLength: 200 } }, additionalProperties: false },
+      execute: ({ query }: { query?: string }) => reader.getTrainingMemory!(user.userId, query) as Promise<{ memories: TrainingMemory[]; limitation: string }>
     },
     {
       name: "search_knowledge",

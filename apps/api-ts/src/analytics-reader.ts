@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import { COMPETITIVE_QUEUE_ID, calculatePlayerMetrics, type PlayerMetrics } from "@valorant/domain";
 import type { KnowledgeRagClient } from "./knowledge-rag.js";
+import { mapProviderResultToMemory, type MemoryProvider } from "./mem0-memory.js";
 
 export type AnalyticsScope = {
   queue: typeof COMPETITIVE_QUEUE_ID;
@@ -59,6 +60,7 @@ export type KnowledgeResult = { chunkId: string; sourceId: string; title: string
 export type TrainingMemory = {
   id: string; kind: "goal" | "summary"; content: string; sourceRunId?: string;
   createdAt: string; updatedAt: string;
+  provider?: "mem0" | "postgres"; providerMemoryId?: string;
 };
 export type RankBenchmark = {
   available: boolean; tier: number | null; cohortPlayers: number; minimumPlayers: number;
@@ -68,7 +70,7 @@ export type RankBenchmark = {
 };
 
 export class AnalyticsReader {
-  constructor(private readonly pool: Pool, private readonly knowledgeRag?: KnowledgeRagClient) {}
+  constructor(private readonly pool: Pool, private readonly knowledgeRag?: KnowledgeRagClient, private readonly memoryProvider?: MemoryProvider) {}
 
   async getRiotAccountId(userId: string): Promise<string | null> {
     const result = await this.pool.query<{ id: string }>("SELECT id FROM riot_accounts WHERE user_id = $1 LIMIT 1", [userId]);
@@ -112,32 +114,71 @@ export class AnalyticsReader {
 
   async getTrainingMemories(userId: string): Promise<TrainingMemory[]> {
     const result = await this.pool.query<MemoryRow>(
-      "SELECT id, kind, content, source_run_id, created_at, updated_at FROM training_memories WHERE user_id = $1 ORDER BY updated_at DESC", [userId]
+      "SELECT id, kind, content, source_run_id, provider, provider_memory_id, created_at, updated_at FROM training_memories WHERE user_id = $1 ORDER BY updated_at DESC", [userId]
     );
     return result.rows.map(toTrainingMemory);
   }
 
   async createTrainingMemory(userId: string, kind: "goal" | "summary", content: string, sourceRunId?: string): Promise<TrainingMemory> {
+    const id = randomUUID();
     const result = await this.pool.query<MemoryRow>(
-      `INSERT INTO training_memories (id, user_id, kind, content, source_run_id)
-       VALUES ($1, $2, $3, $4, $5) RETURNING id, kind, content, source_run_id, created_at, updated_at`,
-      [randomUUID(), userId, kind, content, sourceRunId ?? null]
+      `INSERT INTO training_memories (id, user_id, kind, content, source_run_id, provider)
+       VALUES ($1, $2, $3, $4, $5, 'postgres')
+       RETURNING id, kind, content, source_run_id, provider, provider_memory_id, created_at, updated_at`,
+      [id, userId, kind, content, sourceRunId ?? null]
     );
-    return toTrainingMemory(result.rows[0]);
+    const memory = toTrainingMemory(result.rows[0]);
+    if (!this.memoryProvider) return memory;
+    let providerMemoryId: string | undefined;
+    try {
+      providerMemoryId = await this.memoryProvider.add({ userId: scopedMemoryUserId(userId), memoryId: id, kind, content, sourceRunId });
+      await this.pool.query("UPDATE training_memories SET provider = 'mem0', provider_memory_id = $3, updated_at = now() WHERE user_id = $1 AND id = $2", [userId, id, providerMemoryId]);
+      return { ...memory, provider: "mem0", providerMemoryId };
+    } catch (error) {
+      if (providerMemoryId) await this.memoryProvider.delete(providerMemoryId).catch(() => undefined);
+      console.warn("Mem0 add failed; keeping PostgreSQL memory", error instanceof Error ? error.message : error);
+      return memory;
+    }
   }
 
   async updateTrainingMemory(userId: string, id: string, kind: "goal" | "summary", content: string): Promise<TrainingMemory | null> {
     const result = await this.pool.query<MemoryRow>(
       `UPDATE training_memories SET kind = $3, content = $4, updated_at = now()
        WHERE user_id = $1 AND id = $2
-       RETURNING id, kind, content, source_run_id, created_at, updated_at`, [userId, id, kind, content]
+       RETURNING id, kind, content, source_run_id, provider, provider_memory_id, created_at, updated_at`, [userId, id, kind, content]
     );
-    return result.rows[0] ? toTrainingMemory(result.rows[0]) : null;
+    const memory = result.rows[0] ? toTrainingMemory(result.rows[0]) : null;
+    if (!memory || !this.memoryProvider || memory.provider !== "mem0" || !memory.providerMemoryId) return memory;
+    let nextProviderMemoryId: string | undefined;
+    try {
+      nextProviderMemoryId = await this.memoryProvider.add({ userId: scopedMemoryUserId(userId), memoryId: id, kind, content, sourceRunId: memory.sourceRunId });
+      await this.memoryProvider.delete(memory.providerMemoryId);
+      await this.pool.query("UPDATE training_memories SET provider_memory_id = $3, updated_at = now() WHERE user_id = $1 AND id = $2", [userId, id, nextProviderMemoryId]);
+      return { ...memory, providerMemoryId: nextProviderMemoryId };
+    } catch (error) {
+      if (nextProviderMemoryId) await this.memoryProvider.delete(nextProviderMemoryId).catch(() => undefined);
+      console.warn("Mem0 update failed; PostgreSQL memory remains available", error instanceof Error ? error.message : error);
+      return memory;
+    }
   }
 
   async deleteTrainingMemory(userId: string, id: string): Promise<boolean> {
+    const existing = await this.pool.query<MemoryRow>("SELECT id, kind, content, source_run_id, provider, provider_memory_id, created_at, updated_at FROM training_memories WHERE user_id = $1 AND id = $2", [userId, id]);
+    const providerMemoryId = existing.rows[0]?.provider === "mem0" ? existing.rows[0].provider_memory_id : null;
     const result = await this.pool.query("DELETE FROM training_memories WHERE user_id = $1 AND id = $2", [userId, id]);
+    if (providerMemoryId && this.memoryProvider) {
+      try { await this.memoryProvider.delete(providerMemoryId); }
+      catch (error) { console.warn("Mem0 delete failed after local deletion", error instanceof Error ? error.message : error); }
+    }
     return result.rowCount === 1;
+  }
+
+  async deleteAllTrainingMemories(userId: string): Promise<void> {
+    await this.pool.query("DELETE FROM training_memories WHERE user_id = $1", [userId]);
+    if (this.memoryProvider) {
+      try { await this.memoryProvider.deleteAll(scopedMemoryUserId(userId)); }
+      catch (error) { console.warn("Mem0 delete-all failed after local deletion", error instanceof Error ? error.message : error); }
+    }
   }
 
   async hasCompletedAgentRun(userId: string, runId: string): Promise<boolean> {
@@ -148,8 +189,21 @@ export class AnalyticsReader {
     return result.rowCount === 1;
   }
 
-  async getTrainingMemory(userId: string): Promise<{ memories: TrainingMemory[]; limitation: string }> {
-    return { memories: await this.getTrainingMemories(userId), limitation: "Training memory is user-provided context, not match evidence." };
+  async getTrainingMemory(userId: string, query?: string): Promise<{ memories: TrainingMemory[]; limitation: string }> {
+    const localMemories = await this.getTrainingMemories(userId);
+    if (!this.memoryProvider || !query?.trim()) return { memories: localMemories, limitation: "Training memory is user-provided context, not match evidence." };
+    try {
+      const results = await this.memoryProvider.search(scopedMemoryUserId(userId), query.trim(), 10);
+      const byProviderId = new Map(localMemories.filter((memory) => memory.providerMemoryId).map((memory) => [memory.providerMemoryId!, memory]));
+      const memories = results.flatMap((result) => {
+        const local = byProviderId.get(result.providerMemoryId);
+        return local ? [mapProviderResultToMemory(result, local)] : [];
+      });
+      return { memories, limitation: "Training memory was semantically retrieved for the current account; it is user-provided context, not match evidence." };
+    } catch (error) {
+      console.warn("Mem0 search failed; using PostgreSQL memories", error instanceof Error ? error.message : error);
+      return { memories: localMemories, limitation: "Mem0 was unavailable, so PostgreSQL memory was used; memory is user-provided context, not match evidence." };
+    }
   }
 
   async getActPerformance(userId: string): Promise<ActPerformanceResult> {
@@ -654,6 +708,7 @@ type SyncJobRow = {
 
 type MemoryRow = {
   id: string; kind: "goal" | "summary"; content: string; source_run_id: string | null;
+  provider?: "mem0" | "postgres" | null; provider_memory_id?: string | null;
   created_at: Date | string; updated_at: Date | string;
 };
 type KnowledgeRow = { chunk_id: string; source_id: string; title: string; content: string; evidence_text: string; map_name: string | null; side: string | null; topics: string[] | null; patch_version: string | null; source_trust: string; url: string };
@@ -689,8 +744,14 @@ function toTrainingMemory(row: MemoryRow): TrainingMemory {
     content: row.content,
     ...(row.source_run_id ? { sourceRunId: row.source_run_id } : {}),
     createdAt: asIso(row.created_at)!,
-    updatedAt: asIso(row.updated_at)!
+    updatedAt: asIso(row.updated_at)!,
+    provider: row.provider === "mem0" ? "mem0" : "postgres",
+    ...(row.provider_memory_id ? { providerMemoryId: row.provider_memory_id } : {})
   };
+}
+
+function scopedMemoryUserId(userId: string): string {
+  return `valorant-analytics:${userId}`;
 }
 
 function toKnowledge(row: KnowledgeRow): KnowledgeResult {

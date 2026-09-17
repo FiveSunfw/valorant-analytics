@@ -38,3 +38,8 @@ export const knowledgeIndexVersion = process.env.KNOWLEDGE_INDEX_VERSION ?? "v1"
 export const localEmbeddingUrl = process.env.LOCAL_EMBEDDING_URL ?? "";
 export const localEmbeddingModel = process.env.LOCAL_EMBEDDING_MODEL ?? "Qwen/Qwen3-Embedding-0.6B";
 export const enableKnowledgeRerank = process.env.ENABLE_KNOWLEDGE_RERANK !== "false";
+// Mem0 is optional: without a key the API keeps the PostgreSQL memory store,
+// so a local clone remains runnable and deterministic.
+export const mem0ApiKey = process.env.MEM0_API_KEY ?? "";
+export const mem0BaseUrl = process.env.MEM0_BASE_URL ?? "https://api.mem0.ai";
+export const mem0TimeoutMs = Number(process.env.MEM0_TIMEOUT_MS ?? "8000");

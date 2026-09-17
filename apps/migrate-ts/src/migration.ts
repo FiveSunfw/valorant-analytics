@@ -128,6 +128,13 @@ const migrations = [{
     "CREATE INDEX IF NOT EXISTS ix_knowledge_drafts_source_status ON knowledge_drafts (source_id, status)",
     "CREATE INDEX IF NOT EXISTS ix_knowledge_jobs_source_status ON knowledge_extraction_jobs (source_id, status)"
   ]
+}, {
+  id: "20260917_0011",
+  statements: [
+    "ALTER TABLE training_memories ADD COLUMN IF NOT EXISTS provider VARCHAR(32) NOT NULL DEFAULT 'postgres'",
+    "ALTER TABLE training_memories ADD COLUMN IF NOT EXISTS provider_memory_id TEXT",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_training_memories_provider_memory ON training_memories (provider, provider_memory_id) WHERE provider_memory_id IS NOT NULL"
+  ]
 }];
 
 export async function migrate(pool: SqlExecutor): Promise<void> {

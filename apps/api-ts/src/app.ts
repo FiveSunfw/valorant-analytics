@@ -30,6 +30,8 @@ import { DemoSessionError, DemoSessionService } from "./demo-session.js";
 import { isDemoFixtureProfile, type DemoFixtureProfile } from "./demo-fixtures.js";
 import { enqueueAccountSync } from "./sync-queue.js";
 import { KnowledgeRagClient } from "./knowledge-rag.js";
+import { mem0ApiKey, mem0BaseUrl, mem0TimeoutMs } from "./config.js";
+import { memoryProviderFromEnvironment, type MemoryProvider } from "./mem0-memory.js";
 
 const SESSION_COOKIE = "valorant_session";
 
@@ -38,6 +40,7 @@ type RuntimeDependencies = {
   redis: Redis;
   oauth?: RiotOAuthService;
   analyticsReader?: AnalyticsReader;
+  memoryProvider?: MemoryProvider;
   agentModel?: AgentModel;
   agentTrace?: AgentTraceSink | null;
   demoMode?: boolean;
@@ -83,7 +86,8 @@ export function buildApp(dependencies: RuntimeDependencies = {
     scopes: riotRsoScopes,
     encryptionKey: tokenEncryptionKey
   }, new PostgresRiotOAuthStore(dependencies.pool));
-  const analyticsReader = dependencies.analyticsReader ?? new AnalyticsReader(dependencies.pool, new KnowledgeRagClient());
+  const memoryProvider = dependencies.memoryProvider ?? memoryProviderFromEnvironment({ apiKey: mem0ApiKey, baseUrl: mem0BaseUrl, timeoutMs: mem0TimeoutMs });
+  const analyticsReader = dependencies.analyticsReader ?? new AnalyticsReader(dependencies.pool, new KnowledgeRagClient(), memoryProvider);
   const agentModel = dependencies.agentModel ?? createAgentModelFromEnvironment();
   const agentTrace = dependencies.agentTrace === undefined ? new PostgresAgentTraceSink(dependencies.pool) : dependencies.agentTrace;
   const demoMode = dependencies.demoMode ?? enableDemoMode;
@@ -113,6 +117,9 @@ export function buildApp(dependencies: RuntimeDependencies = {
   app.post("/auth/riot/disconnect", async (request, reply) => {
     const session = await oauth.getSession(readCookie(request.headers.cookie, SESSION_COOKIE));
     if (!session) throw new RiotOAuthError("authorization", 401, "A valid product session is required");
+    if (typeof (dependencies.pool as unknown as { query?: unknown }).query === "function") {
+      await analyticsReader.deleteAllTrainingMemories?.(session.userId);
+    }
     await oauth.disconnect(session.userId);
     return reply.code(204).send();
   });

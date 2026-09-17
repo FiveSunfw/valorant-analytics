@@ -69,7 +69,7 @@ type RequiredContext = { toolName: "get_rank_benchmark" | "get_training_memory" 
 
 function requiredContextTool(question: string, observations: readonly ToolObservation[]): RequiredContext | null {
   if (/(同段位|基准|benchmark|中位数)/i.test(question) && !observations.some((observation) => observation.toolName === "get_rank_benchmark")) return { toolName: "get_rank_benchmark", input: {} };
-  if (/(训练目标|训练计划|记住|长期记忆|上次分析|我的目标|memory)/i.test(question) && !observations.some((observation) => observation.toolName === "get_training_memory")) return { toolName: "get_training_memory", input: {} };
+  if (/(训练目标|训练计划|记住|长期记忆|上次分析|我的目标|memory)/i.test(question) && !observations.some((observation) => observation.toolName === "get_training_memory")) return { toolName: "get_training_memory", input: { query: question.slice(0, 200) } };
   if (/(跨\s*Act|段位趋势|赛季表现|act performance)/i.test(question) && !observations.some((observation) => observation.toolName === "get_act_performance")) return { toolName: "get_act_performance", input: {} };
   if (/(英雄维度|英雄表现|agent performance|different agents)/i.test(question) && !observations.some((observation) => observation.toolName === "get_agent_performance")) return { toolName: "get_agent_performance", input: {} };
   if (/(经济局|经济表现|economy|full buy|半起)/i.test(question) && !observations.some((observation) => observation.toolName === "get_economy_performance")) return { toolName: "get_economy_performance", input: {} };
@@ -197,7 +197,7 @@ export class DeterministicAnalysisModel implements AgentModel {
     const metrics = data.metrics;
     const asksAboutMemory = /(训练目标|训练计划|记住|长期记忆|上次分析|我的目标|memory)/i.test(request.userMessage);
     if (asksAboutMemory && !request.observations.some((observation) => observation.toolName === "get_training_memory")) {
-      return { decision: { kind: "tool_call", toolName: "get_training_memory", input: {} }, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 } };
+      return { decision: { kind: "tool_call", toolName: "get_training_memory", input: { query: request.userMessage.slice(0, 200) } }, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 } };
     }
     const asksAboutBenchmark = /(同段位|基准|benchmark|中位数)/i.test(request.userMessage);
     if (asksAboutBenchmark && !request.observations.some((observation) => observation.toolName === "get_rank_benchmark")) {
