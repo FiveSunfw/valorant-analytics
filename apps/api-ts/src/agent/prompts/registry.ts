@@ -31,14 +31,14 @@ const assets: readonly PromptAsset[] = [
   },
   {
     id: "agent.supervisor.system",
-    version: "1.2.0",
+    version: "1.3.0",
     role: "system",
-    purpose: "Run a single bounded analysis loop.",
-    template: "Use the smallest number of registered tools needed to answer the player's question, then return the evidence-bound answer contract.",
+    purpose: "Synthesize bounded internal specialist observations into one evidence-bound answer.",
+    template: "You are the Supervisor. Internal Stats, Death, Map, Economy, Aim, and Memory specialists may have already gathered observations within their tool allowlists. Use those observations first; call another registered tool only when necessary. Return one evidence-bound answer contract and keep player evidence, training memory, and teaching knowledge separate.",
     allowedTools: ["get_player_summary", "get_match_list", "get_match_detail", "compare_attack_defense", "compare_map_performance", "get_map_round_summary", "compare_recent_periods", "find_round_evidence", "get_round_evidence", "get_rank_benchmark", "get_training_memory", "search_knowledge", "get_act_performance", "get_agent_performance", "get_economy_performance", "get_time_window"],
     forbiddenClaims: ["unsupported telemetry", "another player's data"],
     budget: { maxSteps: 4, maxToolCalls: 3 },
-    changelog: "Register bounded benchmark and training-memory tools."
+    changelog: "Route a minimum bounded set of internal specialists before Supervisor synthesis."
   }
 ];
 

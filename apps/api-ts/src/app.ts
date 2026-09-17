@@ -23,7 +23,8 @@ import {
 import { analysisModelInputUsdPerMillion, analysisModelOutputUsdPerMillion, enableDemoMode, enableEvalMode } from "./config.js";
 import { PostgresRiotOAuthStore, RiotOAuthError, RiotOAuthService } from "./riot-oauth.js";
 import { AnalyticsReader } from "./analytics-reader.js";
-import { AgentRunError, createDefaultAnalysis, type AgentModel } from "./agent-runtime.js";
+import { AgentRunError, type AgentModel } from "./agent-runtime.js";
+import { runMultiAgentAnalysis } from "./multi-agent.js";
 import { createAgentModelFromEnvironment } from "./openai-compatible-model.js";
 import { PostgresAgentTraceSink, type AgentTraceSink } from "./agent-trace.js";
 import { DemoSessionError, DemoSessionService } from "./demo-session.js";
@@ -280,7 +281,7 @@ export function buildApp(dependencies: RuntimeDependencies = {
         scopedQuestion = `${body.question}\n[Product scope: analyze only competitive match ${scope.matchId}]`;
       } else if (scope.type !== "recent") throw new AgentRunError("invalid_input", "scope type is invalid");
     }
-    const result = await createDefaultAnalysis({
+    const result = await runMultiAgentAnalysis({
       user: { userId: session.userId }, question: scopedQuestion, reader: analyticsReader, model: agentModel, traceSink: agentTrace, usageRates: { inputUsdPerMillion: analysisModelInputUsdPerMillion, outputUsdPerMillion: analysisModelOutputUsdPerMillion }
     });
     return reply.send(result);

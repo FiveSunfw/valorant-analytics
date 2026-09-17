@@ -3,11 +3,12 @@ import { promptRegistry } from "./registry.js";
 
 describe("prompt registry", () => {
   it("returns versioned, hashed assets with an explicit tool allowlist", () => {
-    const prompt = promptRegistry.get("agent.supervisor.system", "1.2.0");
+    const prompt = promptRegistry.get("agent.supervisor.system", "1.3.0");
     expect(prompt.hash).toMatch(/^[a-f0-9]{64}$/);
     expect(prompt.allowedTools).toContain("get_player_summary");
     expect(prompt.allowedTools).toContain("compare_recent_periods");
     expect(prompt.allowedTools).toContain("get_training_memory");
+    expect(prompt.template).toContain("Internal Stats, Death, Map, Economy, Aim, and Memory specialists");
     expect(prompt.budget.maxToolCalls).toBeGreaterThan(0);
   });
 

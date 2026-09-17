@@ -30,6 +30,7 @@ export type ToolObservation = {
   toolName: string;
   input: unknown;
   result: unknown;
+  specialist?: string;
 };
 
 export type AgentRunResult = {
@@ -57,11 +58,12 @@ export type AgentRunOptions = {
   maxSteps?: number;
   maxToolCalls?: number;
   toolTimeoutMs?: number;
+  initialObservations?: readonly ToolObservation[];
   traceSink?: AgentTraceSink | null;
   usageRates?: { inputUsdPerMillion?: number; outputUsdPerMillion?: number };
 };
 
-function unsupportedQuestion(question: string): boolean {
+export function unsupportedQuestion(question: string): boolean {
   return /(实时指挥|实时对局|赛前侦察|对手信息|其他玩家|他人.*puuid|作弊|外挂|api[_\s-]?key|access[_\s-]?token|隐藏\s*(mmr|elo)|hidden\s*(mmr|elo))/i.test(question);
 }
 
@@ -102,8 +104,8 @@ export async function runAnalysis(options: AgentRunOptions): Promise<AgentRunRes
   const sharedPolicy = promptRegistry.get("agent.shared.policy");
   const runId = options.runId ?? randomUUID();
   const startedAt = Date.now();
-  const observations: ToolObservation[] = [];
-  let toolCalls = 0;
+  const observations: ToolObservation[] = [...(options.initialObservations ?? [])];
+  let toolCalls = observations.length;
   let steps = 0;
   const usage: ModelUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
   const estimatedCostUsd = options.usageRates?.inputUsdPerMillion === undefined || options.usageRates?.outputUsdPerMillion === undefined ? null : 0;
