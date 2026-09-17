@@ -2,7 +2,6 @@
 
 面向 VALORANT 国际服竞技玩家的个人赛后复盘 Agent。它只分析当前授权用户的已完成竞技对局，用确定性指标和可追溯的比赛/回合证据生成训练建议。
 
-> 当前是审核演示版本：使用脱敏 fixture 跑通 Demo 登录、同步状态、竞技比赛筛选、证据分析、同段位基准和训练记忆。真实 Riot RSO 与 Match API 仍需 `881743` 生产应用审核通过后开通。
 
 ## 已实现
 
@@ -56,18 +55,7 @@ npm run build --workspace=@valorant/web
 npm run eval --workspace=@valorant/api
 ```
 
-Agent、prompt、工具或 context 的任何改动都必须运行真实模型 Eval；结果写入被忽略的 `eval/results/`，不提交。
-
-## 部署边界
-
-Cloudflare Pages/Workers 可以部署 Next.js Web 并提供 HTTPS 访问地址，通常不需要自备备案域名；但本项目的 API 仍依赖服务器侧 `DEEPSEEK_API_KEY`、PostgreSQL、Redis 和 RabbitMQ。不能把这些密钥或数据库 URL 放进浏览器端，也不能只部署前端就获得可用 Agent。
-
-推荐的公开演示拓扑是：Cloudflare 托管 Web，独立的受保护 API 托管在可运行 Node/Fastify 且能连接 Postgres/Redis 的环境；Web 的 `API_BASE_URL` 指向该 API。真实 Riot RSO 上线前，还需取得 Production Key 和 RSO Client，把回调 URL 换成公网 HTTPS 地址并在 Riot 控制台登记。
-
 ## 产品边界
 
 - 仅国际服、仅已完成竞技模式、仅当前授权玩家本人。
 - 不保存 Riot 密码；密钥和 token 仅服务端保存。
-- 不做向量 RAG、多 Agent、赛前对手侦察、实时对局指挥或作弊辅助。
-
-这是公开演示仓库：内部交接、提示词、评测设计和开发工作流文档不随 GitHub 发布。
