@@ -24,3 +24,13 @@ export const enableDemoMode = process.env.ENABLE_DEMO_MODE === "true";
 export const enableEvalMode = process.env.ENABLE_EVAL_MODE === "true";
 export const analysisModelInputUsdPerMillion = process.env.DEEPSEEK_INPUT_USD_PER_MILLION ? Number(process.env.DEEPSEEK_INPUT_USD_PER_MILLION) : undefined;
 export const analysisModelOutputUsdPerMillion = process.env.DEEPSEEK_OUTPUT_USD_PER_MILLION ? Number(process.env.DEEPSEEK_OUTPUT_USD_PER_MILLION) : undefined;
+// Retrieval credentials are server-only. Leave them empty to use the safe PostgreSQL fallback.
+export const qdrantUrl = process.env.QDRANT_URL ?? "";
+export const qdrantApiKey = process.env.QDRANT_API_KEY ?? "";
+export const qdrantCollection = process.env.QDRANT_COLLECTION ?? "valorant_knowledge_v1";
+export const qdrantTimeoutMs = Number(process.env.QDRANT_TIMEOUT_MS ?? "8000");
+export const jinaApiKey = process.env.JINA_API_KEY ?? "";
+export const jinaBaseUrl = process.env.JINA_BASE_URL ?? "https://api.jina.ai/v1";
+export const jinaEmbeddingModel = process.env.JINA_EMBEDDING_MODEL ?? "jina-embeddings-v3";
+export const jinaRerankModel = process.env.JINA_RERANK_MODEL ?? "jina-reranker-v2-base-multilingual";
+export const knowledgeIndexVersion = process.env.KNOWLEDGE_INDEX_VERSION ?? "v1";

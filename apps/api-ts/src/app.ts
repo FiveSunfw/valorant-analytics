@@ -29,6 +29,7 @@ import { PostgresAgentTraceSink, type AgentTraceSink } from "./agent-trace.js";
 import { DemoSessionError, DemoSessionService } from "./demo-session.js";
 import { isDemoFixtureProfile, type DemoFixtureProfile } from "./demo-fixtures.js";
 import { enqueueAccountSync } from "./sync-queue.js";
+import { KnowledgeRagClient } from "./knowledge-rag.js";
 
 const SESSION_COOKIE = "valorant_session";
 
@@ -82,7 +83,7 @@ export function buildApp(dependencies: RuntimeDependencies = {
     scopes: riotRsoScopes,
     encryptionKey: tokenEncryptionKey
   }, new PostgresRiotOAuthStore(dependencies.pool));
-  const analyticsReader = dependencies.analyticsReader ?? new AnalyticsReader(dependencies.pool);
+  const analyticsReader = dependencies.analyticsReader ?? new AnalyticsReader(dependencies.pool, new KnowledgeRagClient());
   const agentModel = dependencies.agentModel ?? createAgentModelFromEnvironment();
   const agentTrace = dependencies.agentTrace === undefined ? new PostgresAgentTraceSink(dependencies.pool) : dependencies.agentTrace;
   const demoMode = dependencies.demoMode ?? enableDemoMode;

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import { COMPETITIVE_QUEUE_ID, calculatePlayerMetrics, type PlayerMetrics } from "@valorant/domain";
+import type { KnowledgeRagClient } from "./knowledge-rag.js";
 
 export type AnalyticsScope = {
   queue: typeof COMPETITIVE_QUEUE_ID;
@@ -67,7 +68,7 @@ export type RankBenchmark = {
 };
 
 export class AnalyticsReader {
-  constructor(private readonly pool: Pool) {}
+  constructor(private readonly pool: Pool, private readonly knowledgeRag?: KnowledgeRagClient) {}
 
   async getRiotAccountId(userId: string): Promise<string | null> {
     const result = await this.pool.query<{ id: string }>("SELECT id FROM riot_accounts WHERE user_id = $1 LIMIT 1", [userId]);
@@ -209,15 +210,27 @@ export class AnalyticsReader {
   }
 
   async searchKnowledge(userId: string, query: string, mapName?: string, side?: "attack" | "defense", limit = 5): Promise<{ query: string; results: KnowledgeResult[]; limitation: string }> {
+    const hybrid = await this.knowledgeRag?.search(query, { mapName, side }, Math.min(10, Math.max(1, limit)));
+    if (hybrid?.hits.length) {
+      const ids = hybrid.hits.map((hit) => hit.chunkId);
+      const indexed = await this.pool.query<KnowledgeRow>(
+        `SELECT c.chunk_id, c.source_id, c.title, c.content, c.evidence_text, c.map_name, c.side, c.topics, c.patch_version, c.source_trust, s.url
+         FROM knowledge_chunks c JOIN knowledge_sources s ON s.source_id=c.source_id
+         WHERE c.chunk_id = ANY($1::uuid[]) AND c.review_status='approved' AND c.withdrawn_at IS NULL AND (c.stale_at IS NULL OR c.stale_at > now()) AND s.status IN ('reviewed','approved')`, [ids]
+      );
+      const byId = new Map(indexed.rows.map((row) => [row.chunk_id, toKnowledge(row)]));
+      const results = ids.flatMap((id) => byId.get(id) ?? []);
+      if (results.length) return { query, results, limitation: `知识内容是通用教学背景，不是当前玩家比赛事实。检索路径：${hybrid.hits[0].path}；索引：${hybrid.indexVersion}${hybrid.limitations.length ? `；限制：${hybrid.limitations.join(" ")}` : ""}` };
+    }
     const result = await this.pool.query<KnowledgeRow>(
       `SELECT c.chunk_id, c.source_id, c.title, c.content, c.evidence_text, c.map_name, c.side, c.topics, c.patch_version, c.source_trust, s.url
        FROM knowledge_chunks c JOIN knowledge_sources s ON s.source_id=c.source_id
-       WHERE c.review_status='approved' AND c.withdrawn_at IS NULL AND (c.stale_at IS NULL OR c.stale_at > now())
+       WHERE c.review_status='approved' AND c.withdrawn_at IS NULL AND (c.stale_at IS NULL OR c.stale_at > now()) AND s.status IN ('reviewed','approved')
          AND ($1='' OR c.search_vector @@ plainto_tsquery('simple',$1) OR c.content ILIKE '%' || $1 || '%')
          AND ($2::text IS NULL OR c.map_name=$2) AND ($3::text IS NULL OR c.side=$3)
        ORDER BY ts_rank(c.search_vector, plainto_tsquery('simple',$1)) DESC, c.updated_at DESC LIMIT $4`, [query.trim(), mapName ?? null, side ?? null, Math.min(10, Math.max(1, limit))]
     );
-    return { query, results: result.rows.map(toKnowledge), limitation: "知识内容是通用教学背景，不是当前玩家比赛事实。" };
+    return { query, results: result.rows.map(toKnowledge), limitation: "知识内容是通用教学背景，不是当前玩家比赛事实。当前使用 PostgreSQL 全文降级检索。" };
   }
 
   async getRankBenchmark(userId: string): Promise<RankBenchmark> {

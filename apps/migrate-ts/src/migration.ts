@@ -115,6 +115,19 @@ const migrations = [{
     "CREATE INDEX IF NOT EXISTS ix_knowledge_chunks_filters ON knowledge_chunks (map_name, side, review_status)",
     "ALTER TABLE round_kills ADD COLUMN IF NOT EXISTS is_first_kill BOOLEAN NOT NULL DEFAULT FALSE"
   ]
+}, {
+  id: "20260917_0010",
+  statements: [
+    `CREATE TABLE IF NOT EXISTS knowledge_extraction_jobs (job_id UUID PRIMARY KEY, source_id VARCHAR(128) NOT NULL REFERENCES knowledge_sources(source_id) ON DELETE CASCADE, status VARCHAR(32) NOT NULL DEFAULT 'pending', content_hash VARCHAR(64), transcript_path TEXT, artifact_manifest_path TEXT, error_code VARCHAR(64), error_message TEXT, started_at TIMESTAMPTZ, finished_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
+    `CREATE TABLE IF NOT EXISTS knowledge_drafts (draft_id UUID PRIMARY KEY, source_id VARCHAR(128) NOT NULL REFERENCES knowledge_sources(source_id) ON DELETE CASCADE, title TEXT NOT NULL, content TEXT NOT NULL, evidence_text TEXT NOT NULL, map_name VARCHAR(64), side VARCHAR(16), phase VARCHAR(32), topics TEXT[] NOT NULL DEFAULT '{}', transcript_start_seconds NUMERIC, transcript_end_seconds NUMERIC, transcript_excerpt TEXT, asset_ids UUID[] NOT NULL DEFAULT '{}', confidence NUMERIC, generator_model VARCHAR(128), content_hash VARCHAR(64), status VARCHAR(32) NOT NULL DEFAULT 'pending', review_note TEXT, reviewed_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
+    "ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS content_hash VARCHAR(64)",
+    "ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS index_version VARCHAR(64)",
+    "ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS indexed_at TIMESTAMPTZ",
+    "ALTER TABLE knowledge_assets ADD COLUMN IF NOT EXISTS content_hash VARCHAR(64)",
+    "ALTER TABLE knowledge_assets ADD COLUMN IF NOT EXISTS caption TEXT",
+    "CREATE INDEX IF NOT EXISTS ix_knowledge_drafts_source_status ON knowledge_drafts (source_id, status)",
+    "CREATE INDEX IF NOT EXISTS ix_knowledge_jobs_source_status ON knowledge_extraction_jobs (source_id, status)"
+  ]
 }];
 
 export async function migrate(pool: SqlExecutor): Promise<void> {
