@@ -18,10 +18,20 @@ const manifestPath = `${root}\\out\\${target}\\manifest.json`;
 const pool = new Pool({ connectionString: databaseUrl });
 
 async function extract() {
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn("python", ["extract.py", "--source-id", source.id, "--url", source.url], { cwd: root, stdio: "inherit", shell: false });
-    child.on("error", reject); child.on("exit", (code) => code === 0 ? resolve() : reject(new Error(`extract exited ${code}`)));
-  });
+  const jobId = randomUUID();
+  await pool.query("INSERT INTO knowledge_extraction_jobs (job_id,source_id,status,started_at) VALUES ($1,$2,'running',now())", [jobId, source.id]);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn("python", ["extract.py", "--source-id", source.id, "--url", source.url], { cwd: root, stdio: "inherit", shell: false });
+      child.on("error", reject); child.on("exit", (code) => code === 0 ? resolve() : reject(new Error(`extract exited ${code}`)));
+    });
+    const raw = await readFile(manifestPath, "utf8");
+    const hash = createHash("sha256").update(raw).digest("hex");
+    await pool.query("UPDATE knowledge_extraction_jobs SET status='completed',content_hash=$2,transcript_path=$3,artifact_manifest_path=$3,finished_at=now(),updated_at=now() WHERE job_id=$1", [jobId, hash, manifestPath]);
+  } catch (error) {
+    await pool.query("UPDATE knowledge_extraction_jobs SET status='failed',error_code='extract_failed',error_message=$2,finished_at=now(),updated_at=now() WHERE job_id=$1", [jobId, error instanceof Error ? error.message : String(error)]);
+    throw error;
+  }
 }
 async function draft() {
   const raw = await readFile(manifestPath, "utf8"); const hash = createHash("sha256").update(raw).digest("hex");

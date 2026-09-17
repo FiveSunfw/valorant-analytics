@@ -35,3 +35,6 @@ export const jinaBaseUrl = process.env.JINA_BASE_URL ?? "https://api.jina.ai/v1"
 export const jinaEmbeddingModel = process.env.JINA_EMBEDDING_MODEL ?? "jina-embeddings-v3";
 export const jinaRerankModel = process.env.JINA_RERANK_MODEL ?? "jina-reranker-v2-base-multilingual";
 export const knowledgeIndexVersion = process.env.KNOWLEDGE_INDEX_VERSION ?? "v1";
+export const localEmbeddingUrl = process.env.LOCAL_EMBEDDING_URL ?? "";
+export const localEmbeddingModel = process.env.LOCAL_EMBEDDING_MODEL ?? "Qwen/Qwen3-Embedding-0.6B";
+export const enableKnowledgeRerank = process.env.ENABLE_KNOWLEDGE_RERANK !== "false";
