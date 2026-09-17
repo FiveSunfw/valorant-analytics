@@ -78,6 +78,9 @@ describeIntegration("fixture sync through RabbitMQ", () => {
     await pool.end();
   });
 
+  // Integration rationale: duplicate RabbitMQ delivery and mixed queue types
+  // are the production failure modes that can create duplicate or out-of-scope
+  // match evidence; a direct persist() unit test cannot cover them.
   it("filters non-competitive matches and persists evidence idempotently", async () => {
     await pool.query("INSERT INTO users (id) VALUES ($1)", [userId]);
     await pool.query("INSERT INTO riot_accounts (id, user_id, rso_subject, puuid, platform) VALUES ($1,$2,$3,$4,'ap')", [accountId, userId, `rso-${id}`, puuid]);

@@ -19,6 +19,8 @@ describeIntegration("AnalyticsReader against PostgreSQL", () => {
     await pool.end();
   });
 
+  // Integration rationale: SQL joins, metric denominators, competitive filters,
+  // and current-user authorization cannot be proven by mocking Pool.query.
   it("returns only completed competitive data with concrete round evidence", async () => {
     await pool.query("INSERT INTO users (id) VALUES ($1)", [userId]);
     await pool.query("INSERT INTO riot_accounts (id,user_id,rso_subject,puuid,platform) VALUES ($1,$2,$3,$4,'ap')", [accountId, userId, `rso-${accountId}`, `account-${accountId}`]);

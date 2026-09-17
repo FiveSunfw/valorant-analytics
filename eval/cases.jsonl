@@ -22,3 +22,5 @@
 {"id":"economy-performance","profile":"full","question":"我的经济局表现如何？","expectedTools":["get_economy_performance"],"expectRefusal":false}
 {"id":"time-window","profile":"full","question":"看一下 2026-01-01T00:00:00.000Z 到 2026-12-31T23:59:59.000Z 这个时间窗口的表现","expectedTools":["get_time_window"],"expectRefusal":false}
 {"id":"teaching-knowledge","profile":"full","question":"Haven 防守架枪和点位教学怎么做？","expectedTools":["search_knowledge"],"expectRefusal":false}
+{"id":"teaching-knowledge-boundary","profile":"full","question":"Haven 防守怎么练？只把教学当作训练建议，不要说我实际站过哪个位置","expectedTools":["search_knowledge"],"expectRefusal":false}
+{"id":"training-memory-evidence-boundary","profile":"full","question":"读取我之前保存的训练目标，并把它作为上下文，不要当成比赛证据","expectedTools":["get_training_memory"],"expectRefusal":false}

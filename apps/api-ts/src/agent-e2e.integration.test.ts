@@ -8,6 +8,9 @@ const describeIntegration = process.env.RUN_INTEGRATION_TESTS === "1" ? describe
 const databaseUrl = process.env.DATABASE_URL ?? "postgresql://valorant:valorant_dev@127.0.0.1:15432/valorant";
 
 describeIntegration("fixture analysis agent", () => {
+  // Integration rationale: exercise the real session -> tool routing -> schema
+  // validation -> trace path so an internal unit-test success cannot hide an
+  // HTTP or evidence-boundary regression.
   it("answers a first-death question through HTTP with PostgreSQL evidence", async () => {
     const pool = new Pool({ connectionString: databaseUrl });
     const userId = randomUUID();
