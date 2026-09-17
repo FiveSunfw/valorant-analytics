@@ -114,7 +114,8 @@ def main():
             try: manifest["transcriptSegments"]=fetch_subtitle(subtitle); manifest["status"]="subtitle_complete"
             except Exception as error: manifest["subtitleError"]=str(error); manifest["transcriptSegments"]=asr(args.url,temp); manifest["status"]="asr_complete"
         else: manifest["transcriptSegments"]=asr(args.url,temp); manifest["status"]="asr_complete"
-        manifest["frames"]=extract_frames(info, args.url, root)
+        manifest["frames"]=extract_frames(info, args.url, root) if os.getenv("ENABLE_FRAME_EXTRACTION", "false").lower() == "true" else []
+        manifest["framesStatus"]="enabled" if manifest["frames"] else "not_requested"
         (root/"manifest.json").write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding="utf-8")
         print(json.dumps({"sourceId":args.source_id,"manifest":str(root/'manifest.json'),"status":manifest["status"]},ensure_ascii=False))
     finally:
