@@ -25,8 +25,10 @@ def download_info(url, work):
         page = api(f"https://api.bilibili.com/x/player/pagelist?bvid={bvid}")[0]
         player = api(f"https://api.bilibili.com/x/player/v2?bvid={bvid}&cid={page['cid']}")
         play = api(f"https://api.bilibili.com/x/player/playurl?bvid={bvid}&cid={page['cid']}&qn=64&fnval=4048&fnver=0&fourk=1")
-        audio = (play.get("dash", {}).get("audio") or [{}])[0].get("baseUrl")
-        return {"id": bvid, "title": view.get("title"), "description": view.get("desc"), "duration": view.get("duration"), "bili_audio_url": audio, "bili_subtitles": player.get("subtitle", {}).get("subtitles", []), "view_points": player.get("view_points", [])}
+        dash = play.get("dash", {})
+        audio = (dash.get("audio") or [{}])[0].get("baseUrl")
+        video = (dash.get("video") or [{}])[0].get("baseUrl")
+        return {"id": bvid, "title": view.get("title"), "description": view.get("desc"), "duration": view.get("duration"), "bili_audio_url": audio, "bili_video_url": video, "bili_subtitles": player.get("subtitle", {}).get("subtitles", []), "view_points": player.get("view_points", [])}
 
 def transcript_from_subtitles(info):
     if info.get("bili_subtitles"):
@@ -62,10 +64,45 @@ def asr(url, temp):
         raw_audio = temp / "audio.m4s"
         subprocess.run(["curl.exe", "-L", "--max-time", "1800", "-sS", "-A", "Mozilla/5.0", "-e", url, audio_url, "-o", str(raw_audio)], check=True)
     media = next(temp.glob("audio.*"))
-    try: model = WhisperModel("small", device="cuda", compute_type="float16")
-    except Exception: model = WhisperModel("base", device="cpu", compute_type="int8")
+    preferred=os.getenv("WHISPER_MODEL", "small")
+    device=os.getenv("WHISPER_DEVICE", "cuda")
+    try:
+        model = WhisperModel(preferred, device=device, compute_type="float16" if device == "cuda" else "int8")
+    except Exception:
+        model = WhisperModel("base", device="cpu", compute_type="int8")
     segments, _ = model.transcribe(str(media), vad_filter=True)
     return [{"start": round(s.start,2), "end": round(s.end,2), "text": s.text.strip()} for s in segments]
+
+def describe_frame(path):
+    endpoint=os.getenv("VISION_API_BASE_URL", "").rstrip("/")
+    key=os.getenv("VISION_API_KEY", "")
+    model=os.getenv("VISION_MODEL", "")
+    if not endpoint or not key or not model: return {"status":"not_configured"}
+    import base64
+    encoded=base64.b64encode(path.read_bytes()).decode("ascii")
+    response=httpx.post(endpoint + "/chat/completions", headers={"Authorization":"Bearer " + key}, json={"model":model,"temperature":0,"response_format":{"type":"json_object"},"messages":[{"role":"system","content":"Extract only visible VALORANT teaching information. Never infer a player's behavior. Return JSON with map, side, phase, callouts, visibleText, tacticalSummary, confidence."},{"role":"user","content":[{"type":"text","text":"Describe this teaching screenshot for a pending knowledge draft."},{"type":"image_url","image_url":{"url":"data:image/jpeg;base64," + encoded}}]}]}, timeout=90)
+    response.raise_for_status()
+    return {"status":"complete","result":response.json().get("choices", [{}])[0].get("message", {}).get("content", "")}
+
+def extract_frames(info, source_url, root):
+    video_url=info.get("bili_video_url")
+    if not video_url: return []
+    ffmpeg=os.getenv("FFMPEG_BIN", "ffmpeg")
+    points=info.get("view_points") or []
+    times=[]
+    for point in points: times.append((float(point.get("from", 0)), point.get("content", "")))
+    if not times and info.get("duration"):
+        duration=float(info["duration"]); times=[(duration*i/4, "") for i in range(4)]
+    frame_dir=root/"frames"; frame_dir.mkdir(exist_ok=True)
+    frames=[]
+    for index,(seconds,label) in enumerate(times[:12]):
+        output=frame_dir/f"frame-{index:02d}.jpg"
+        headers="Referer: " + source_url + "\r\nUser-Agent: Mozilla/5.0\r\n"
+        try:
+            subprocess.run([ffmpeg,"-hide_banner","-loglevel","error","-y","-ss",str(seconds),"-headers",headers,"-i",video_url,"-frames:v","1","-q:v","4",str(output)], check=True, timeout=120)
+            if output.exists() and output.stat().st_size: frames.append({"path":str(output),"seconds":seconds,"label":label,"vision":describe_frame(output)})
+        except Exception as error: frames.append({"seconds":seconds,"label":label,"vision":{"status":"failed","error":str(error)}})
+    return frames
 
 def main():
     parser=argparse.ArgumentParser(); parser.add_argument("--source-id", required=True); parser.add_argument("--url", required=True); parser.add_argument("--out", default="out")
@@ -77,6 +114,7 @@ def main():
             try: manifest["transcriptSegments"]=fetch_subtitle(subtitle); manifest["status"]="subtitle_complete"
             except Exception as error: manifest["subtitleError"]=str(error); manifest["transcriptSegments"]=asr(args.url,temp); manifest["status"]="asr_complete"
         else: manifest["transcriptSegments"]=asr(args.url,temp); manifest["status"]="asr_complete"
+        manifest["frames"]=extract_frames(info, args.url, root)
         (root/"manifest.json").write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding="utf-8")
         print(json.dumps({"sourceId":args.source_id,"manifest":str(root/'manifest.json'),"status":manifest["status"]},ensure_ascii=False))
     finally:

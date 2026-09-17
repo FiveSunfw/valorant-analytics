@@ -13,6 +13,8 @@
     "knowledge:draft": "tsx src/knowledge-cli.ts draft",
     "knowledge:index": "tsx src/knowledge-cli.ts index",
     "knowledge:reindex": "tsx src/knowledge-cli.ts reindex",
+    "knowledge:approve": "tsx src/knowledge-cli.ts approve",
+    "knowledge:withdraw": "tsx src/knowledge-cli.ts withdraw",
     "eval": "tsx src/eval-runner.ts",
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
