@@ -29,6 +29,7 @@ export const qdrantUrl = process.env.QDRANT_URL ?? "";
 export const qdrantApiKey = process.env.QDRANT_API_KEY ?? "";
 export const qdrantCollection = process.env.QDRANT_COLLECTION ?? "valorant_knowledge_v1";
 export const qdrantTimeoutMs = Number(process.env.QDRANT_TIMEOUT_MS ?? "8000");
+export const jinaTimeoutMs = Number(process.env.JINA_TIMEOUT_MS ?? "30000");
 export const jinaApiKey = process.env.JINA_API_KEY ?? "";
 export const jinaBaseUrl = process.env.JINA_BASE_URL ?? "https://api.jina.ai/v1";
 export const jinaEmbeddingModel = process.env.JINA_EMBEDDING_MODEL ?? "jina-embeddings-v3";

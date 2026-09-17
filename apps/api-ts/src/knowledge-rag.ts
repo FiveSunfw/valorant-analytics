@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { jinaApiKey, jinaBaseUrl, jinaEmbeddingModel, jinaRerankModel, knowledgeIndexVersion, qdrantApiKey, qdrantCollection, qdrantTimeoutMs, qdrantUrl } from "./config.js";
+import { jinaApiKey, jinaBaseUrl, jinaEmbeddingModel, jinaRerankModel, jinaTimeoutMs, knowledgeIndexVersion, qdrantApiKey, qdrantCollection, qdrantTimeoutMs, qdrantUrl } from "./config.js";
 
 export type KnowledgeFilters = { mapName?: string; side?: "attack" | "defense" };
 export type HybridKnowledgeHit = { chunkId: string; score: number; path: "rrf" | "rrf_rerank" };
@@ -40,7 +40,7 @@ export class KnowledgeRagClient {
     if (!this.enabled) return undefined;
     const limitations: string[] = [];
     try {
-      const dense = await this.embedding(normalizeKnowledgeQuery(query));
+      const dense = await this.embedding(normalizeKnowledgeQuery(query), "retrieval.query");
       const must: unknown[] = [{ key: "reviewStatus", match: { value: "approved" } }, { key: "active", match: { value: true } }];
       if (filters.mapName) must.push({ key: "mapName", match: { value: filters.mapName } });
       if (filters.side) must.push({ key: "side", match: { value: filters.side } });
@@ -67,7 +67,7 @@ export class KnowledgeRagClient {
   async index(chunk: { chunkId: string; content: string; title: string; mapName?: string; side?: string; topics: string[]; sourceId: string; assetId?: string }): Promise<void> {
     if (!this.enabled) throw new Error("Qdrant and Jina configuration is required for indexing");
     await this.ensureCollection();
-    const vector = await this.embedding(`${chunk.title}\n${chunk.content}`);
+    const vector = await this.embedding(`${chunk.title}\n${chunk.content}`, "retrieval.passage");
     await this.qdrant(`/collections/${qdrantCollection}/points?wait=true`, { points: [{ id: chunk.chunkId, vector: { dense: vector, bm25: sparseVector(`${chunk.title} ${chunk.content} ${chunk.topics.join(" ")}`) }, payload: { ...chunk, reviewStatus: "approved", active: true, indexVersion: knowledgeIndexVersion } }] });
   }
 
@@ -80,8 +80,8 @@ export class KnowledgeRagClient {
     } finally { clearTimeout(timer); }
   }
 
-  private async embedding(input: string): Promise<number[]> {
-    const data = await this.jina("/embeddings", { model: jinaEmbeddingModel, input: [input], task: "retrieval.query" });
+  private async embedding(input: string, task: "retrieval.query" | "retrieval.passage"): Promise<number[]> {
+    const data = await this.jina("/embeddings", { model: jinaEmbeddingModel, input: [input], task });
     const vector = (data as { data?: Array<{ embedding?: number[] }> }).data?.[0]?.embedding;
     if (!vector?.length) throw new Error("Embedding response did not contain a vector");
     return vector;
@@ -91,10 +91,10 @@ export class KnowledgeRagClient {
     const rows = (data as { results?: Array<{ index: number; relevance_score: number }> }).results ?? [];
     return rows.filter((row) => candidates[row.index]).map((row) => ({ chunkId: candidates[row.index].chunkId, score: row.relevance_score, path: "rrf_rerank" }));
   }
-  private async jina(path: string, body: unknown): Promise<unknown> { return this.request(`${jinaBaseUrl}${path}`, body, { Authorization: `Bearer ${jinaApiKey}` }); }
+  private async jina(path: string, body: unknown): Promise<unknown> { return this.request(`${jinaBaseUrl}${path}`, body, { Authorization: `Bearer ${jinaApiKey}` }, jinaTimeoutMs); }
   private async qdrant(path: string, body: unknown): Promise<unknown> { return this.request(`${qdrantUrl.replace(/\/$/, "")}${path}`, body, qdrantApiKey ? { "api-key": qdrantApiKey } : {}); }
-  private async request(url: string, body: unknown, headers: Record<string, string>): Promise<unknown> {
-    const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), qdrantTimeoutMs);
+  private async request(url: string, body: unknown, headers: Record<string, string>, timeoutMs = qdrantTimeoutMs): Promise<unknown> {
+    const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), timeoutMs);
     try { const response = await fetch(url, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body), signal: controller.signal }); if (!response.ok) throw new Error(`Remote retrieval request failed: ${response.status}`); return response.json(); }
     finally { clearTimeout(timer); }
   }
