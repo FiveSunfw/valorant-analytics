@@ -1,5 +1,5 @@
 """Private Bilibili transcript-first extraction. No media is retained after processing."""
-import argparse, json, os, shutil, subprocess, sys
+import argparse, json, os, re, shutil, subprocess, sys
 from pathlib import Path
 import httpx
 import yt_dlp
@@ -10,9 +10,28 @@ def download_info(url, work):
             "subtitleslangs": ["zh-Hans", "zh-CN", "zh", "en"], "outtmpl": str(work / "%(id)s.%(ext)s"), "quiet": True}
     cookie = os.getenv("BILIBILI_COOKIES")
     if cookie: opts["cookiefile"] = cookie
-    with yt_dlp.YoutubeDL(opts) as ydl: return ydl.extract_info(url, download=False)
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl: return ydl.extract_info(url, download=False)
+    except Exception:
+        # Windows environments with a TLS interception layer can break Python SSL while
+        # the system curl remains usable. The Bilibili endpoints below are public.
+        bvid = re.search(r"BV[0-9A-Za-z]+", url).group(0)
+        def api(endpoint):
+            raw = subprocess.check_output(["curl.exe", "-L", "--compressed", "--max-time", "30", "-s", endpoint], text=True, encoding="utf-8")
+            payload = json.loads(raw)
+            if payload.get("code") != 0: raise RuntimeError(payload.get("message", "Bilibili API error"))
+            return payload["data"]
+        view = api(f"https://api.bilibili.com/x/web-interface/view?bvid={bvid}")
+        page = api(f"https://api.bilibili.com/x/player/pagelist?bvid={bvid}")[0]
+        player = api(f"https://api.bilibili.com/x/player/v2?bvid={bvid}&cid={page['cid']}")
+        play = api(f"https://api.bilibili.com/x/player/playurl?bvid={bvid}&cid={page['cid']}&qn=64&fnval=4048&fnver=0&fourk=1")
+        audio = (play.get("dash", {}).get("audio") or [{}])[0].get("baseUrl")
+        return {"id": bvid, "title": view.get("title"), "description": view.get("desc"), "duration": view.get("duration"), "bili_audio_url": audio, "bili_subtitles": player.get("subtitle", {}).get("subtitles", []), "view_points": player.get("view_points", [])}
 
 def transcript_from_subtitles(info):
+    if info.get("bili_subtitles"):
+        item = info["bili_subtitles"][0]
+        return {"kind": "bilibili_subtitle", "url": item.get("subtitle_url"), "language": item.get("lan_doc", item.get("lan", ""))}
     tracks = info.get("subtitles") or info.get("automatic_captions") or {}
     for language in ("zh-Hans", "zh-CN", "zh", "en"):
         if tracks.get(language):
@@ -34,7 +53,14 @@ def asr(url, temp):
     opts = {"format": "bestaudio/best", "outtmpl": str(audio), "quiet": True, "postprocessors": [{"key":"FFmpegExtractAudio","preferredcodec":"mp3"}]}
     cookie = os.getenv("BILIBILI_COOKIES")
     if cookie: opts["cookiefile"] = cookie
-    with yt_dlp.YoutubeDL(opts) as ydl: ydl.download([url])
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl: ydl.download([url])
+    except Exception:
+        info = download_info(url, temp)
+        audio_url = info.get("bili_audio_url")
+        if not audio_url: raise
+        raw_audio = temp / "audio.m4s"
+        subprocess.run(["curl.exe", "-L", "--max-time", "1800", "-sS", "-A", "Mozilla/5.0", "-e", url, audio_url, "-o", str(raw_audio)], check=True)
     media = next(temp.glob("audio.*"))
     try: model = WhisperModel("small", device="cuda", compute_type="float16")
     except Exception: model = WhisperModel("base", device="cpu", compute_type="int8")

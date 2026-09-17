@@ -66,8 +66,18 @@ export class KnowledgeRagClient {
 
   async index(chunk: { chunkId: string; content: string; title: string; mapName?: string; side?: string; topics: string[]; sourceId: string; assetId?: string }): Promise<void> {
     if (!this.enabled) throw new Error("Qdrant and Jina configuration is required for indexing");
+    await this.ensureCollection();
     const vector = await this.embedding(`${chunk.title}\n${chunk.content}`);
     await this.qdrant(`/collections/${qdrantCollection}/points?wait=true`, { points: [{ id: chunk.chunkId, vector: { dense: vector, bm25: sparseVector(`${chunk.title} ${chunk.content} ${chunk.topics.join(" ")}`) }, payload: { ...chunk, reviewStatus: "approved", active: true, indexVersion: knowledgeIndexVersion } }] });
+  }
+
+  private async ensureCollection(): Promise<void> {
+    const url = `${qdrantUrl.replace(/\/$/, "")}/collections/${qdrantCollection}`;
+    const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), qdrantTimeoutMs);
+    try {
+      const response = await fetch(url, { method: "PUT", headers: { "content-type": "application/json", ...(qdrantApiKey ? { "api-key": qdrantApiKey } : {}) }, body: JSON.stringify({ vectors: { dense: { size: 1024, distance: "Cosine" } }, sparse_vectors: { bm25: { modifier: "idf" } } }), signal: controller.signal });
+      if (!response.ok && response.status !== 409) throw new Error(`Unable to create Qdrant collection: ${response.status}`);
+    } finally { clearTimeout(timer); }
   }
 
   private async embedding(input: string): Promise<number[]> {
