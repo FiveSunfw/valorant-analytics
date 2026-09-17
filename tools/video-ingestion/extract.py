@@ -65,12 +65,14 @@ def asr(url, temp):
         subprocess.run(["curl.exe", "-L", "--max-time", "1800", "-sS", "-A", "Mozilla/5.0", "-e", url, audio_url, "-o", str(raw_audio)], check=True)
     media = next(temp.glob("audio.*"))
     preferred=os.getenv("WHISPER_MODEL", "small")
+    local_model=os.getenv("WHISPER_MODEL_PATH", str(Path(__file__).parent / "models" / "faster-whisper-small"))
+    model_source=local_model if Path(local_model).exists() else preferred
     device=os.getenv("WHISPER_DEVICE", "cuda")
     try:
-        model = WhisperModel(preferred, device=device, compute_type="float16" if device == "cuda" else "int8")
+        model = WhisperModel(model_source, device=device, compute_type="float16" if device == "cuda" else "int8", cpu_threads=1, num_workers=1)
     except Exception:
         model = WhisperModel("base", device="cpu", compute_type="int8")
-    segments, _ = model.transcribe(str(media), vad_filter=True)
+    segments, _ = model.transcribe(str(media), language="zh", beam_size=1, vad_filter=False, condition_on_previous_text=False)
     return [{"start": round(s.start,2), "end": round(s.end,2), "text": s.text.strip()} for s in segments]
 
 def describe_frame(path):

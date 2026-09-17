@@ -1,3 +1,7 @@
 yt-dlp>=2025.1.15
 faster-whisper>=1.1.1
+ctranslate2==4.4.0
+numpy<2
+setuptools<81
+backports.tarfile>=1.2.0
 httpx>=0.28.1
