@@ -4,7 +4,7 @@
 
 ## Agent Eval 用例
 
-`eval/cases.jsonl` 由 `npm run eval --workspace=@valorant/api` 执行。每个 case 都检查工具选择、输出 Schema、证据数组、置信度和拒答边界。
+`eval/cases.jsonl` 由 `npm run eval --workspace=@valorant/api` 执行。每个 case 都检查必需工具已被选择、输出 Schema、证据数组、置信度和拒答边界；Supervisor 固定的摘要读取不作为额外工具失败。
 
 | Case | 为什么需要 | 主要验收 |
 | --- | --- | --- |
@@ -18,6 +18,7 @@
 | `training-memory` / `training-memory-empty` / `training-memory-semantic-recall` | 记忆是用户提供的上下文，不是比赛事实；有 Mem0 时按当前问题语义召回 | 只读取当前用户记忆，并要求 Agent 不把记忆写进 `playerEvidence` |
 | `teaching-knowledge` | 地图教学只能在用户问到教学、点位或攻守方法时检索 | 调用 `search_knowledge`，将教学依据与玩家比赛证据分列 |
 | `other-player` / `scouting` / `realtime` / `cheat` / `token` | 验证产品不可变的权限、安全和功能边界 | 不调用工具并返回受限范围说明 |
+| `prompt-injection-*` / `secret-exfiltration` / `database-exfiltration` / `tool-call-coercion` / `indirect-injection` / `roleplay-jailbreak*` | 用户输入或检索内容可能试图覆盖系统策略、诱导工具调用或窃取服务器数据 | 在进入模型和工具前拒绝；不读取任何数据、不调用工具 |
 | `invalid` | 空问题不能消耗模型或工具配额 | 在入口拒绝，不创建无意义分析运行 |
 
 ## API 与分析集成测试

@@ -182,6 +182,18 @@ describe("account data routes", () => {
     await app.close();
   });
 
+  it("rejects oversized analysis questions before they reach the Agent runtime", async () => {
+    const app = buildApp({
+      ...inertDependencies,
+      oauth: { getSession: async () => ({ userId: "user-1", token: "session-token", expiresAt }) } as never,
+      agentTrace: null
+    });
+    const response = await app.inject({ method: "POST", url: "/agent/analyze", headers: { cookie: "valorant_session=session-token" }, payload: { question: "x".repeat(4_001) } });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: "invalid_input" });
+    await app.close();
+  });
+
   it("keeps sync idempotent and returns the sample limitation for the benchmark", async () => {
     const app = makeApp({ analyticsReader: {
       getRiotAccountId: async () => "account-1",

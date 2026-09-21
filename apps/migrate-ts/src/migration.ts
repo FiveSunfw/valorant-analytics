@@ -135,6 +135,11 @@ const migrations = [{
     "ALTER TABLE training_memories ADD COLUMN IF NOT EXISTS provider_memory_id TEXT",
     "CREATE UNIQUE INDEX IF NOT EXISTS ux_training_memories_provider_memory ON training_memories (provider, provider_memory_id) WHERE provider_memory_id IS NOT NULL"
   ]
+}, {
+  id: "20260917_0012",
+  statements: [
+    "ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS model_provider VARCHAR(128) NOT NULL DEFAULT 'unknown'"
+  ]
 }];
 
 export async function migrate(pool: SqlExecutor): Promise<void> {

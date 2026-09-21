@@ -14,6 +14,8 @@ describe("migrate", () => {
     expect(calls.some((sql) => sql.includes("agent_runs"))).toBe(true);
     expect(calls.findIndex((sql) => sql.includes("CREATE TABLE IF NOT EXISTS agent_runs"))).toBeLessThan(calls.findIndex((sql) => sql.includes("ALTER TABLE agent_runs ALTER COLUMN answer")));
     expect(calls.some((sql) => sql.includes("estimated_cost_usd"))).toBe(true);
+    expect(calls.some((sql) => sql.includes("model_provider"))).toBe(true);
+    expect(calls.some((sql) => sql.includes("provider_memory_id"))).toBe(true);
     expect(calls.at(-1)).toContain("INSERT INTO schema_migrations");
   });
 });

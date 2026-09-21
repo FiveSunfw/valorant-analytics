@@ -270,6 +270,7 @@ export function buildApp(dependencies: RuntimeDependencies = {
     if (!session) throw new RiotOAuthError("authorization", 401, "A valid product session is required");
     const body = request.body as { question?: unknown; scope?: unknown } | undefined;
     if (typeof body?.question !== "string") throw new AgentRunError("invalid_input", "question must be a string");
+    if (body.question.length > 4_000) throw new AgentRunError("invalid_input", "question must not exceed 4000 characters");
     let scopedQuestion = body.question;
     if (body.scope !== undefined) {
       if (!body.scope || typeof body.scope !== "object" || !("type" in body.scope)) throw new AgentRunError("invalid_input", "scope is invalid");

@@ -4,6 +4,7 @@
 !.env.example
 AGENTS.md
 HANDOFF.md
+resume_and_interview_guide.md
 
 # Dependencies
 node_modules/
@@ -29,3 +30,6 @@ logs/
 # Python cache
 __pycache__/
 *.py[cod]
+.vercel
+.env*
+!.env.example

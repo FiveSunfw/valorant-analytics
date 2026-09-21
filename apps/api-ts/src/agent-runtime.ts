@@ -63,13 +63,31 @@ export type AgentRunOptions = {
   usageRates?: { inputUsdPerMillion?: number; outputUsdPerMillion?: number };
 };
 
+const restrictedRequestPatterns: readonly RegExp[] = [
+  /实时指挥|实时对局|赛前侦察|对手信息|其他玩家|另一个用户|所有用户|他人.*puuid|作弊|外挂/i,
+  /api[_\s-]?key|access[_\s-]?token|refresh[_\s-]?token|authorization|bearer\s+token|\b(password|secret)\b|\.env\b|环境变量/i,
+  /隐藏\s*(mmr|elo)|hidden\s*(mmr|elo)/i,
+  /(?:ignore|disregard|override|bypass|reveal|show).{0,80}(?:previous|system|developer|instruction|prompt|message)/i,
+  /(?:忽略|无视|绕过|覆盖|泄露|展示).{0,40}(?:之前|上面|系统|开发者|指令|提示词|消息)/i,
+  /(?:system|developer|hidden)\s*(?:prompt|instruction|message)|(?:系统|开发者|隐藏).{0,10}(?:提示词|指令|消息)/i,
+  /(?:decode|解码).{0,80}(?:instruction|prompt|提示词|指令)/i,
+  /(?:chain\s*of\s*thought|reasoning trace|思维链|推理过程)/i,
+  /(?:act as|roleplay|pretend|你现在是|扮演).{0,80}(?:system|developer|管理员|系统|开发者|管理员)/i,
+  /(?:导出|读取|展示|泄露|dump|export|read|show).{0,40}(?:数据库|db|sql|table|记录|records|配置|config|日志|logs)/i,
+  /\b(?:select|insert|update|delete|drop)\b.{0,80}\b(?:from|into|table)\b/i,
+  /\b(?:puuid|riot\s*id)\b/i,
+  /(?:call|invoke|执行|调用)\s*(?:get_|search_|compare_|find_)[a-z_]+/i
+];
+
 export function unsupportedQuestion(question: string): boolean {
-  return /(实时指挥|实时对局|赛前侦察|对手信息|其他玩家|他人.*puuid|作弊|外挂|api[_\s-]?key|access[_\s-]?token|隐藏\s*(mmr|elo)|hidden\s*(mmr|elo))/i.test(question);
+  return restrictedRequestPatterns.some((pattern) => pattern.test(question));
 }
 
-type RequiredContext = { toolName: "get_rank_benchmark" | "get_training_memory" | "get_act_performance" | "get_agent_performance" | "get_economy_performance" | "get_time_window" | "search_knowledge"; input: unknown };
+type RequiredContext = { toolName: "get_match_detail" | "get_rank_benchmark" | "get_training_memory" | "get_act_performance" | "get_agent_performance" | "get_economy_performance" | "get_time_window" | "search_knowledge"; input: unknown };
 
 function requiredContextTool(question: string, observations: readonly ToolObservation[]): RequiredContext | null {
+  const scopedMatch = question.match(/\[Product scope: analyze only competitive match ([^\]]+)\]/);
+  if (scopedMatch && !observations.some((observation) => observation.toolName === "get_match_detail")) return { toolName: "get_match_detail", input: { matchId: scopedMatch[1] } };
   if (/(同段位|基准|benchmark|中位数)/i.test(question) && !observations.some((observation) => observation.toolName === "get_rank_benchmark")) return { toolName: "get_rank_benchmark", input: {} };
   if (/(训练目标|训练计划|记住|长期记忆|上次分析|我的目标|memory)/i.test(question) && !observations.some((observation) => observation.toolName === "get_training_memory")) return { toolName: "get_training_memory", input: { query: question.slice(0, 200) } };
   if (/(跨\s*Act|段位趋势|赛季表现|act performance)/i.test(question) && !observations.some((observation) => observation.toolName === "get_act_performance")) return { toolName: "get_act_performance", input: {} };
@@ -129,7 +147,7 @@ export async function runAnalysis(options: AgentRunOptions): Promise<AgentRunRes
     return complete(analysisAnswerSchema.parse({
         conclusion: "This analysis is outside the supported post-match scope.",
         playerEvidence: [], knowledgeEvidence: [], confidence: "high", recommendations: [],
-        limitations: ["The product does not provide pre-match scouting, real-time instructions, cheat assistance, or hidden MMR/ELO claims."],
+        limitations: ["The request asks for protected instructions, secrets, private data, prohibited gameplay assistance such as real-time instruction, or direct internal-tool control."],
         nextQuestions: ["Ask about your own completed competitive matches instead."]
       }));
   }
