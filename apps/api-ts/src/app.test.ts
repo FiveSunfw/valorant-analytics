@@ -133,6 +133,35 @@ describe("Riot RSO routes", () => {
     expect(unavailable.statusCode).toBe(404);
     await app.close();
   });
+
+  it("returns an owned match detail for the client context rail", async () => {
+    const calls: unknown[][] = [];
+    const app = buildApp({
+      ...inertDependencies,
+      oauth: { getSession: async () => ({ userId: "user-1", token: "session-token", expiresAt }) } as never,
+      analyticsReader: {
+        getMatchDetail: async (...args: unknown[]) => {
+          calls.push(args);
+          return {
+            scope: { queue: "competitive", sampleSize: 1 },
+            match: args[1] === "match-1" ? {
+              matchId: "match-1", mapName: "Ascent", playedAt: "2026-09-16T00:00:00.000Z", result: "win",
+              roundsWon: 13, roundsLost: 9, kills: 18, deaths: 12, assists: 4,
+              metrics: { kd: 1.5, adr: 156, acs: 242, firstDeathRate: 8.3 }
+            } : null
+          };
+        }
+      } as never,
+      agentTrace: null
+    });
+    const response = await app.inject({ method: "GET", url: "/matches/match-1", headers: { cookie: "valorant_session=session-token" } });
+    const foreign = await app.inject({ method: "GET", url: "/matches/other-match", headers: { cookie: "valorant_session=session-token" } });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().match).toMatchObject({ matchId: "match-1", mapName: "Ascent", roundsWon: 13 });
+    expect(foreign.statusCode).toBe(404);
+    expect(calls).toEqual([["user-1", "match-1"], ["user-1", "other-match"]]);
+    await app.close();
+  });
 });
 
 describe("account data routes", () => {
@@ -189,7 +218,9 @@ describe("account data routes", () => {
       agentTrace: null
     });
     const response = await app.inject({ method: "POST", url: "/agent/analyze", headers: { cookie: "valorant_session=session-token" }, payload: { question: "x".repeat(4_001) } });
+    const oversizedConversation = await app.inject({ method: "POST", url: "/agent/analyze", headers: { cookie: "valorant_session=session-token" }, payload: { question: "继续", conversation: [{ role: "user", content: "x".repeat(16_001) }] } });
     expect(response.statusCode).toBe(400);
+    expect(oversizedConversation.statusCode).toBe(400);
     expect(response.json()).toMatchObject({ error: "invalid_input" });
     await app.close();
   });

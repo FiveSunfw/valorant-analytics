@@ -199,6 +199,15 @@ export function buildApp(dependencies: RuntimeDependencies = {
     const limit = Number.isInteger(requestedLimit) && requestedLimit >= 1 && requestedLimit <= 10 ? requestedLimit : 6;
     return analyticsReader.getMatchList(session.userId, limit);
   });
+  app.get("/matches/:matchId", async (request, reply) => {
+    const session = await oauth.getSession(readCookie(request.headers.cookie, SESSION_COOKIE));
+    if (!session) throw new RiotOAuthError("authorization", 401, "A valid product session is required");
+    const matchId = (request.params as { matchId: string }).matchId;
+    if (!matchId || matchId.length > 128) throw new AgentRunError("invalid_input", "matchId is invalid");
+    const detail = await analyticsReader.getMatchDetail(session.userId, matchId);
+    if (!detail.match) return reply.code(404).send({ error: "match_not_found", message: "The selected competitive match was not found" });
+    return detail;
+  });
   app.get("/benchmark", async (request) => {
     const session = await oauth.getSession(readCookie(request.headers.cookie, SESSION_COOKIE));
     if (!session) throw new RiotOAuthError("authorization", 401, "A valid product session is required");
@@ -268,9 +277,13 @@ export function buildApp(dependencies: RuntimeDependencies = {
   app.post("/agent/analyze", async (request, reply) => {
     const session = await oauth.getSession(readCookie(request.headers.cookie, SESSION_COOKIE));
     if (!session) throw new RiotOAuthError("authorization", 401, "A valid product session is required");
-    const body = request.body as { question?: unknown; scope?: unknown } | undefined;
+    const body = request.body as { question?: unknown; scope?: unknown; conversation?: unknown } | undefined;
     if (typeof body?.question !== "string") throw new AgentRunError("invalid_input", "question must be a string");
     if (body.question.length > 4_000) throw new AgentRunError("invalid_input", "question must not exceed 4000 characters");
+    const parsedConversation = z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().trim().min(1).max(4_000) }).strict()).max(12).superRefine((messages, context) => {
+      if (messages.reduce((total, message) => total + message.content.length, 0) > 16_000) context.addIssue({ code: z.ZodIssueCode.custom, message: "conversation content is too large" });
+    }).safeParse(body.conversation ?? []);
+    if (!parsedConversation.success) throw new AgentRunError("invalid_input", "conversation must contain at most 12 bounded messages");
     let scopedQuestion = body.question;
     if (body.scope !== undefined) {
       if (!body.scope || typeof body.scope !== "object" || !("type" in body.scope)) throw new AgentRunError("invalid_input", "scope is invalid");
@@ -283,7 +296,7 @@ export function buildApp(dependencies: RuntimeDependencies = {
       } else if (scope.type !== "recent") throw new AgentRunError("invalid_input", "scope type is invalid");
     }
     const result = await runMultiAgentAnalysis({
-      user: { userId: session.userId }, question: scopedQuestion, reader: analyticsReader, model: agentModel, traceSink: agentTrace, usageRates: { inputUsdPerMillion: analysisModelInputUsdPerMillion, outputUsdPerMillion: analysisModelOutputUsdPerMillion }
+      user: { userId: session.userId }, question: scopedQuestion, conversation: parsedConversation.data, reader: analyticsReader, model: agentModel, traceSink: agentTrace, usageRates: { inputUsdPerMillion: analysisModelInputUsdPerMillion, outputUsdPerMillion: analysisModelOutputUsdPerMillion }
     });
     return reply.send(result);
   });
