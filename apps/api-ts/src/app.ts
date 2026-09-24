@@ -82,11 +82,33 @@ function postAuthRedirect(): string {
   }
 }
 
+function configuredCorsOrigins() {
+  return new Set(
+    (process.env.CORS_ORIGINS ?? "http://127.0.0.1:1420,http://localhost:1420,tauri://localhost,http://tauri.localhost")
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean)
+  );
+}
+
 export function buildApp(dependencies: RuntimeDependencies = {
   pool: new Pool({ connectionString: databaseUrl }),
   redis: new Redis(redisUrl, { maxRetriesPerRequest: 1 })
 }) {
   const app = Fastify({ logger: true });
+  const corsOrigins = configuredCorsOrigins();
+  app.addHook("onRequest", async (request, reply) => {
+    const origin = request.headers.origin;
+    if (origin && corsOrigins.has(origin)) {
+      reply
+        .header("Access-Control-Allow-Origin", origin)
+        .header("Access-Control-Allow-Credentials", "true")
+        .header("Access-Control-Allow-Headers", "content-type")
+        .header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+        .header("Vary", "Origin");
+    }
+    if (request.method === "OPTIONS") return reply.code(204).send();
+  });
   const oauth = dependencies.oauth ?? new RiotOAuthService({
     clientId: riotClientId,
     clientSecret: riotClientSecret,

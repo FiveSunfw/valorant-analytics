@@ -2,6 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+declare global {
+  interface Window {
+    __VALORANT_API_BASE__?: string;
+  }
+}
+
+function apiUrl(path: string) {
+  const base = typeof window !== "undefined" ? window.__VALORANT_API_BASE__ : undefined;
+  return base ? base.replace(/\/$/, "") + path : "/api" + path;
+}
+
 type MatchSummary = { matchId: string; mapName: string; playedAt: string; result: "win" | "loss" };
 type MatchDetail = MatchSummary & {
   roundsWon: number;
@@ -159,7 +170,7 @@ export function CoachClient() {
   const staleMatchContext = Boolean(matchesLoaded && activeSession?.matchId && !activeMatch);
 
   useEffect(() => {
-    void fetch("/api/auth/status", { cache: "no-store" }).then(async (response) => {
+    void fetch(apiUrl("/auth/status"), { cache: "no-store", credentials: "include" }).then(async (response) => {
       const payload = await response.json();
       if (response.ok && payload.authenticated && payload.connected) {
         setLoggedIn(true);
@@ -172,7 +183,7 @@ export function CoachClient() {
 
   async function loadSessions() {
     try {
-      const response = await fetch("/api/coach/sessions", { cache: "no-store" });
+      const response = await fetch(apiUrl("/coach/sessions"), { cache: "no-store", credentials: "include" });
       const payload = await readApiResponse<{ sessions: CoachSession[] }>(response, "无法读取 Coach 会话。");
       setSessions(payload.sessions);
       setActiveSessionId(payload.sessions[0]?.id ?? "");
@@ -192,9 +203,10 @@ export function CoachClient() {
 
   async function newSession(matchId?: string) {
     try {
-      const response = await fetch("/api/coach/sessions", {
+      const response = await fetch(apiUrl("/coach/sessions"), {
         method: "POST",
         headers: { "content-type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(matchId ? { matchId } : {})
       });
       const payload = await readApiResponse<{ session: CoachSession }>(response, "无法创建 Coach 会话。");
@@ -213,9 +225,10 @@ export function CoachClient() {
 
   async function saveSession(sessionId: string, patch: { title?: string; matchId?: string | null }) {
     try {
-      const response = await fetch("/api/coach/sessions/" + encodeURIComponent(sessionId), {
+      const response = await fetch(apiUrl("/coach/sessions/" + encodeURIComponent(sessionId)), {
         method: "PUT",
         headers: { "content-type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(patch)
       });
       await readApiResponse<{ session: CoachSession }>(response, "无法保存 Coach 会话。");
@@ -226,9 +239,10 @@ export function CoachClient() {
 
   async function appendMessage(sessionId: string, message: ChatMessage) {
     try {
-      const response = await fetch("/api/coach/sessions/" + encodeURIComponent(sessionId) + "/messages", {
+      const response = await fetch(apiUrl("/coach/sessions/" + encodeURIComponent(sessionId) + "/messages"), {
         method: "POST",
         headers: { "content-type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ role: message.role, content: message.content, answer: message.answer, runId: message.runId })
       });
       await readApiResponse<{ message: ChatMessage }>(response, "无法保存 Coach 消息。");
@@ -249,9 +263,10 @@ export function CoachClient() {
     const imported: CoachSession[] = [];
     for (const oldSession of legacy) {
       try {
-        const response = await fetch("/api/coach/sessions", {
+        const response = await fetch(apiUrl("/coach/sessions"), {
           method: "POST",
           headers: { "content-type": "application/json" },
+          credentials: "include",
           body: JSON.stringify({ title: oldSession.title })
         });
         if (!response.ok) continue;
@@ -268,7 +283,7 @@ export function CoachClient() {
 
   async function loadMatches() {
     try {
-      const response = await fetch("/api/matches?limit=10", { cache: "no-store" });
+      const response = await fetch(apiUrl("/matches?limit=10"), { cache: "no-store", credentials: "include" });
       const payload = await readApiResponse<{ matches: MatchSummary[] }>(response, "无法读取比赛列表。");
       setMatches(payload.matches);
       setMatchesLoaded(true);
@@ -281,7 +296,7 @@ export function CoachClient() {
     if (matchDetails[matchId]) return matchDetails[matchId];
     setMatchLoading(true);
     try {
-      const response = await fetch("/api/matches/" + encodeURIComponent(matchId), { cache: "no-store" });
+      const response = await fetch(apiUrl("/matches/" + encodeURIComponent(matchId)), { cache: "no-store", credentials: "include" });
       const payload = await readApiResponse<{ match: MatchDetail }>(response, "无法读取这场比赛的详情。");
       setMatchDetails((current) => ({ ...current, [matchId]: payload.match }));
       return payload.match;
@@ -325,7 +340,7 @@ export function CoachClient() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/auth/demo", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      const response = await fetch(apiUrl("/auth/demo"), { method: "POST", headers: { "content-type": "application/json" }, credentials: "include", body: "{}" });
       await readApiResponse<{ mode: "demo" }>(response, "Demo 登录失败。");
       setLoggedIn(true);
       setAccountMode("demo");
@@ -339,19 +354,19 @@ export function CoachClient() {
   }
 
   function connectRiot() {
-    window.location.href = "/api/auth/riot/start";
+    window.location.href = apiUrl("/auth/riot/start");
   }
 
   async function syncMatches() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/sync", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      const response = await fetch(apiUrl("/sync"), { method: "POST", headers: { "content-type": "application/json" }, credentials: "include", body: "{}" });
       let current = await readApiResponse<SyncJob>(response, "同步未能启动。");
       setSyncJob(current);
       for (let attempt = 0; attempt < 25 && (current.status === "queued" || current.status === "running"); attempt += 1) {
         await new Promise((resolve) => window.setTimeout(resolve, 800));
-        const next = await fetch("/api/sync/" + current.jobId, { cache: "no-store" });
+        const next = await fetch(apiUrl("/sync/" + current.jobId), { cache: "no-store", credentials: "include" });
         current = await readApiResponse<SyncJob>(next, "无法读取同步状态。");
         setSyncJob(current);
       }
@@ -392,9 +407,10 @@ export function CoachClient() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/agent/analyze", {
+      const response = await fetch(apiUrl("/agent/analyze"), {
         method: "POST",
         headers: { "content-type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ question: text, scope: matchId ? { type: "match", matchId } : { type: "recent" }, conversation: history })
       });
       const result = await readApiResponse<AnalysisResult>(response, "分析失败，请重试。");
@@ -412,7 +428,7 @@ export function CoachClient() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/auth/riot/disconnect", { method: "POST" });
+      const response = await fetch(apiUrl("/auth/riot/disconnect"), { method: "POST", credentials: "include" });
       if (!response.ok) throw new Error("断开账号失败，请重试。");
       setLoggedIn(false);
       setAccountMode(null);
