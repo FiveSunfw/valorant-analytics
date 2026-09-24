@@ -24,6 +24,26 @@ describe("Riot RSO routes", () => {
     await enabled.close();
   });
 
+  it("uses a secure cross-site session cookie for the hosted desktop API", async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    const app = buildApp({
+      ...inertDependencies,
+      demoMode: true,
+      demoSession: { create: async () => ({ token: "desktop-session", expiresAt }) },
+      agentTrace: null
+    });
+    try {
+      const response = await app.inject({ method: "POST", url: "/auth/demo", payload: {} });
+      expect(response.headers["set-cookie"]).toContain("SameSite=None");
+      expect(response.headers["set-cookie"]).toContain("Secure");
+    } finally {
+      await app.close();
+      if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previousNodeEnv;
+    }
+  });
+
   it("registers the closed eval fixture login only when explicitly enabled", async () => {
     const disabled = buildApp({ ...inertDependencies, evalMode: false, agentTrace: null });
     expect((await disabled.inject({ method: "POST", url: "/auth/eval", payload: { profile: "full" } })).statusCode).toBe(404);

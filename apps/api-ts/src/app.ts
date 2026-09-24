@@ -68,8 +68,8 @@ function readCookie(header: string | undefined, name: string): string | undefine
 }
 
 function sessionCookie(token: string, maxAgeSeconds: number): string {
-  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
-  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}${secure}`;
+  const crossSite = process.env.NODE_ENV === "production" ? "; SameSite=None; Secure" : "; SameSite=Lax";
+  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; Max-Age=${maxAgeSeconds}${crossSite}`;
 }
 
 function postAuthRedirect(): string {

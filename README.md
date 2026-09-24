@@ -189,6 +189,15 @@ $env:RIOT_POST_AUTH_REDIRECT_URL = "http://127.0.0.1:1420/"
 npm run tauri:dev --workspace=@valorant/desktop
 ```
 
+生产构建通过已提交的 `apps/desktop/.env.production` 连接 `https://valorant-analytics-api.vercel.app`；该文件只有公开地址，不得放入密钥。Vercel API 项目通过根目录 `api/index.ts` 将请求适配到当前 TypeScript Fastify API，至少需要配置 `DATABASE_URL`、`REDIS_URL`，实际同步还需要可访问的 `RABBITMQ_URL` 与独立 Worker。Vercel Web 项目需要把 `API_BASE_URL` 设置为上述 API 域名。Riot RSO 上线时同时设置：
+
+```text
+RIOT_REDIRECT_URI=https://valorant-analytics-api.vercel.app/auth/riot/callback
+RIOT_POST_AUTH_REDIRECT_URL=https://<web-production-domain>/?riot=connected
+```
+
+部署后必须先验证 `GET /health` 返回数据库和 Redis 均为 `ok`，再构建桌面安装包。生产会话 Cookie 使用 `SameSite=None; Secure`，以允许 Tauri 客户端通过 HTTPS 携带服务端会话；开发环境仍使用 `SameSite=Lax`。
+
 会话归属于同一个产品客户端用户，而不是某个 Riot 账号，因此同一个客户端可以切换 Riot 账号继续使用历史对话；每次挂载比赛或分析前，服务端仍会校验该比赛是否属于当前产品用户的已授权数据范围。桌面前端可以独立执行生产构建：
 
 ```powershell
