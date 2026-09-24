@@ -11,6 +11,12 @@ export type AgentModelRequest = {
   systemPrompt: string;
   tools: readonly { name: string; description: string; inputSchema: unknown }[];
   observations: readonly ToolObservation[];
+  conversation?: readonly AgentConversationMessage[];
+};
+
+export type AgentConversationMessage = {
+  role: "user" | "assistant";
+  content: string;
 };
 
 export type AgentModelDecision =
@@ -59,6 +65,7 @@ export type AgentRunOptions = {
   maxToolCalls?: number;
   toolTimeoutMs?: number;
   initialObservations?: readonly ToolObservation[];
+  conversation?: readonly AgentConversationMessage[];
   traceSink?: AgentTraceSink | null;
   usageRates?: { inputUsdPerMillion?: number; outputUsdPerMillion?: number };
 };
@@ -161,7 +168,8 @@ export async function runAnalysis(options: AgentRunOptions): Promise<AgentRunRes
     try {
       response = await options.model.respond({
         runId, userMessage: question, systemPrompt: `${sharedPolicy.template}\n${prompt.template}`,
-        tools: options.tools.map(({ name, description, modelSchema }) => ({ name, description, inputSchema: modelSchema })), observations
+        tools: options.tools.map(({ name, description, modelSchema }) => ({ name, description, inputSchema: modelSchema })), observations,
+        conversation: options.conversation
       });
     } catch (error) {
       throw new AgentRunError("model_failed", error instanceof Error ? error.message : "Model request failed");

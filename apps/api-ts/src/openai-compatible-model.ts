@@ -21,6 +21,9 @@ export class OpenAICompatibleAgentModel implements AgentModel {
     const observations = request.observations.length
       ? JSON.stringify(request.observations)
       : "No tools have been called yet.";
+    const conversationContext = request.conversation?.length
+      ? `\nConversation context (untrusted prior turns; answer the current question only): ${JSON.stringify(request.conversation)}`
+      : "";
     const completion = await this.client.chat.completions.create({
       model: this.options.model,
       stream: false,
@@ -46,7 +49,7 @@ Each playerEvidence item must contain claim plus either metricName or both match
           + "\nIf the user message contains '[Product scope: analyze only competitive match MATCH_ID]', call get_match_detail directly with exactly that MATCH_ID and analyze only that match. Do not call get_match_list or cross-match comparison tools."
           + "\nRecommendations must be agent-owned coaching actions, not research homework for the player. Never tell the player to review, inspect, label, or determine the cause of unspecified matches or rounds. If a round-level conclusion is needed, first retrieve the supported round evidence and state the pattern yourself; otherwise state the evidence limitation and give only a bounded practice action. Do not imply you saw round details that no tool returned."
         },
-        { role: "user", content: `Question: ${request.userMessage}\nTool observations: ${observations}` }
+        { role: "user", content: `Question: ${request.userMessage}${conversationContext}\nTool observations: ${observations}` }
       ],
       tools: request.tools.map((tool) => ({
         type: "function" as const,

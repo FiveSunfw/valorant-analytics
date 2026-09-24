@@ -1,5 +1,5 @@
-import { AgentDemo } from "./agent-demo";
+import { CoachClient } from "./coach-client";
 
 export default function Home() {
-  return <AgentDemo />;
+  return <CoachClient />;
 }
