@@ -6,6 +6,7 @@
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js&logoColor=white)](https://nextjs.org/)
+[![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)](https://tauri.app/)
 [![Fastify](https://img.shields.io/badge/Fastify-API-000000?logo=fastify&logoColor=white)](https://fastify.dev/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Docker Compose](https://img.shields.io/badge/Docker_Compose-local_runtime-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
@@ -88,8 +89,8 @@ VALORANT Analytics 把一次赛后提问处理成一条受控的诊断链路：
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│ Next.js Web                                                  │
-│ 统一提问入口 · Demo / 授权状态 · 同步状态 · 分析结果           │
+│ Next.js Web / Tauri Desktop                                  │
+│ 同一套 Coach 工作台 · 会话 · 比赛上下文 · 分析结果             │
 └──────────────────────────────┬──────────────────────────────┘
                                │ HTTP
 ┌──────────────────────────────▼──────────────────────────────┐
@@ -168,15 +169,43 @@ npm run dev --workspace=@valorant/web -- -p 3000
 - 本地 PostgreSQL：`localhost:15432`
 - 本地 Redis：`localhost:16379`
 
-### 桌面 Tauri 壳与 Coach 会话
+### 正式桌面客户端与 Coach 会话
 
-桌面端位于 `apps/desktop`，Tauri 只负责提供原生窗口和 WebView，不保存 Riot 密钥；实际 API 仍由服务端处理。开发时会自动启动 Web，或通过 `VALORANT_WEB_URL` 指向已有的 Web 服务：
+桌面端位于 `apps/desktop`，是一个内置 React/Vite 前端的 Tauri 客户端，不是打开远程 Web URL 的浏览器壳。它提供独立窗口、会话侧栏、对话区、比赛上下文栏、同步状态和账号状态；Coach 会话与消息仍由服务端持久化，Riot 密钥和 token 永远不进入客户端。
+
+先启动 PostgreSQL、Redis、RabbitMQ 与 API，再启动桌面客户端：
 
 ```powershell
+npm run dev --workspace=@valorant/api
 npm run tauri:dev --workspace=@valorant/desktop
 ```
 
-Coach 会话和消息现在持久化到 PostgreSQL。会话归属于同一个产品客户端用户，因此同一个客户端可以切换 Riot 账号继续使用历史对话；每次挂载比赛或分析前，服务端仍会校验该比赛是否属于当前产品用户的已授权数据范围。桌面壳的生产打包需要 Windows MSVC C++ linker。
+桌面 Vite 开发服务器默认使用 `http://127.0.0.1:1420`，API 默认使用 `http://127.0.0.1:8000`。需要连接其他 API 时设置：
+
+```powershell
+$env:VITE_API_BASE_URL = "http://127.0.0.1:8000"
+$env:CORS_ORIGINS = "http://127.0.0.1:1420,http://localhost:1420,tauri://localhost,http://tauri.localhost"
+$env:RIOT_POST_AUTH_REDIRECT_URL = "http://127.0.0.1:1420/"
+npm run tauri:dev --workspace=@valorant/desktop
+```
+
+会话归属于同一个产品客户端用户，而不是某个 Riot 账号，因此同一个客户端可以切换 Riot 账号继续使用历史对话；每次挂载比赛或分析前，服务端仍会校验该比赛是否属于当前产品用户的已授权数据范围。桌面前端可以独立执行生产构建：
+
+```powershell
+npm run build --workspace=@valorant/desktop
+```
+
+原生 Windows 安装包还需要 MSVC C++ linker；当前环境未安装该工具链，因此只把客户端前端构建列为已验证，不把安装包构建包装成已完成。
+
+### Windows 本地依赖约定
+
+为避免系统盘被开发依赖和模型缓存占满，仓库相关下载统一放在 E 盘：
+
+- npm cache：`E:\tools\npm-cache`
+- Cargo home：`E:\tools\cargo-home`
+- OpenCodeReview 工具：`E:\tools\ocr`
+
+不要把 Riot secret、API key、access token、refresh token 或本地环境文件提交到 Git。
 
 ### 可选：重建教学知识索引
 
@@ -237,7 +266,8 @@ apps/
 ├─ api-ts/       Fastify API、Agent Runtime、知识库与 Demo
 ├─ worker-ts/    Riot Match API 同步 Worker 与重试
 ├─ migrate-ts/   PostgreSQL migration runner
-└─ web/          Next.js Web
+├─ web/          Next.js Web 与共享 Coach 界面
+└─ desktop/      Tauri 2 + React/Vite 正式桌面客户端
 packages/
 ├─ domain/       指标、同步与领域合同
 └─ config/       共享配置

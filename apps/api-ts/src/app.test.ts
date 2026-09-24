@@ -266,3 +266,36 @@ describe("account data routes", () => {
     await app.close();
   });
 });
+
+describe("desktop client CORS", () => {
+  it("allows credentialed preflight requests only from configured desktop origins", async () => {
+    const previous = process.env.CORS_ORIGINS;
+    process.env.CORS_ORIGINS = "http://127.0.0.1:1420";
+    const app = buildApp({ ...inertDependencies, agentTrace: null });
+    try {
+      const allowed = await app.inject({
+        method: "OPTIONS",
+        url: "/auth/status",
+        headers: {
+          origin: "http://127.0.0.1:1420",
+          "access-control-request-method": "GET"
+        }
+      });
+      expect(allowed.statusCode).toBe(204);
+      expect(allowed.headers["access-control-allow-origin"]).toBe("http://127.0.0.1:1420");
+      expect(allowed.headers["access-control-allow-credentials"]).toBe("true");
+
+      const denied = await app.inject({
+        method: "OPTIONS",
+        url: "/auth/status",
+        headers: { origin: "https://untrusted.example" }
+      });
+      expect(denied.statusCode).toBe(204);
+      expect(denied.headers["access-control-allow-origin"]).toBeUndefined();
+    } finally {
+      await app.close();
+      if (previous === undefined) delete process.env.CORS_ORIGINS;
+      else process.env.CORS_ORIGINS = previous;
+    }
+  });
+});
