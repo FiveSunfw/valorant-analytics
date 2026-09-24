@@ -168,6 +168,16 @@ npm run dev --workspace=@valorant/web -- -p 3000
 - 本地 PostgreSQL：`localhost:15432`
 - 本地 Redis：`localhost:16379`
 
+### 桌面 Tauri 壳与 Coach 会话
+
+桌面端位于 `apps/desktop`，Tauri 只负责提供原生窗口和 WebView，不保存 Riot 密钥；实际 API 仍由服务端处理。开发时会自动启动 Web，或通过 `VALORANT_WEB_URL` 指向已有的 Web 服务：
+
+```powershell
+npm run tauri:dev --workspace=@valorant/desktop
+```
+
+Coach 会话和消息现在持久化到 PostgreSQL。会话归属于同一个产品客户端用户，因此同一个客户端可以切换 Riot 账号继续使用历史对话；每次挂载比赛或分析前，服务端仍会校验该比赛是否属于当前产品用户的已授权数据范围。桌面壳的生产打包需要 Windows MSVC C++ linker。
+
 ### 可选：重建教学知识索引
 
 ```powershell

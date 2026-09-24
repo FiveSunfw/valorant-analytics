@@ -40,7 +40,7 @@ type CoachSession = {
 };
 type SyncJob = { jobId: string; status: string; imported: number; skipped: number; failedMatchIds: string[]; errorMessage?: string };
 
-const STORAGE_KEY = "valorant-analytics.coach-sessions.v1";
+const LEGACY_STORAGE_KEY = "valorant-analytics.coach-sessions.v1";
 const starters = [
   "总结这场比赛最值得复盘的问题",
   "这场比赛我为什么经常成为首死？",
@@ -76,11 +76,6 @@ async function readApiResponse<T>(response: Response, fallback: string): Promise
   if (!response.ok) throw new Error(typeof payload?.message === "string" ? payload.message : fallback);
   if (!payload) throw new Error(fallback);
   return payload as T;
-}
-
-function createSession(matchId?: string): CoachSession {
-  const timestamp = now();
-  return { id: id("session"), title: "新的复盘会话", matchId, messages: [], createdAt: timestamp, updatedAt: timestamp };
 }
 
 function answerMessage(result: AnalysisResult): ChatMessage {
@@ -151,7 +146,6 @@ export function CoachClient() {
   const [matchDetails, setMatchDetails] = useState<Record<string, MatchDetail>>({});
   const [sessions, setSessions] = useState<CoachSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState("");
-  const [hydrated, setHydrated] = useState(false);
   const [rightPanel, setRightPanel] = useState<"matches" | "detail">("matches");
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
@@ -165,40 +159,112 @@ export function CoachClient() {
   const staleMatchContext = Boolean(matchesLoaded && activeSession?.matchId && !activeMatch);
 
   useEffect(() => {
-    try {
-      const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "[]") as CoachSession[];
-      if (Array.isArray(stored) && stored.length) {
-        setSessions(stored);
-        setActiveSessionId(stored[0].id);
-      }
-    } catch {
-      window.localStorage.removeItem(STORAGE_KEY);
-    }
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (hydrated) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions.slice(0, 20)));
-  }, [hydrated, sessions]);
-
-  useEffect(() => {
     void fetch("/api/auth/status", { cache: "no-store" }).then(async (response) => {
       const payload = await response.json();
       if (response.ok && payload.authenticated && payload.connected) {
         setLoggedIn(true);
         setAccountMode(payload.mode);
         await loadMatches();
+        await loadSessions();
       }
     }).catch(() => undefined);
   }, []);
 
-  useEffect(() => {
-    if (loggedIn && !sessions.length) {
-      const session = createSession();
-      setSessions([session]);
-      setActiveSessionId(session.id);
+  async function loadSessions() {
+    try {
+      const response = await fetch("/api/coach/sessions", { cache: "no-store" });
+      const payload = await readApiResponse<{ sessions: CoachSession[] }>(response, "无法读取 Coach 会话。");
+      setSessions(payload.sessions);
+      setActiveSessionId(payload.sessions[0]?.id ?? "");
+      if (!payload.sessions.length) {
+        const imported = await importLegacySessions();
+        if (imported.length) {
+          setSessions(imported);
+          setActiveSessionId(imported[0].id);
+        } else {
+          await newSession();
+        }
+      }
+    } catch (requestError) {
+      setError(errorMessage(requestError, "无法读取 Coach 会话。"));
     }
-  }, [loggedIn, sessions.length]);
+  }
+
+  async function newSession(matchId?: string) {
+    try {
+      const response = await fetch("/api/coach/sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(matchId ? { matchId } : {})
+      });
+      const payload = await readApiResponse<{ session: CoachSession }>(response, "无法创建 Coach 会话。");
+      setSessions((current) => [payload.session, ...current]);
+      setActiveSessionId(payload.session.id);
+      setQuestion("");
+      setError(null);
+      if (matchId) {
+        setRightPanel("detail");
+        void loadMatchDetail(matchId);
+      }
+    } catch (requestError) {
+      setError(errorMessage(requestError, "无法创建 Coach 会话。"));
+    }
+  }
+
+  async function saveSession(sessionId: string, patch: { title?: string; matchId?: string | null }) {
+    try {
+      const response = await fetch("/api/coach/sessions/" + encodeURIComponent(sessionId), {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(patch)
+      });
+      await readApiResponse<{ session: CoachSession }>(response, "无法保存 Coach 会话。");
+    } catch (requestError) {
+      setError(errorMessage(requestError, "无法保存 Coach 会话。"));
+    }
+  }
+
+  async function appendMessage(sessionId: string, message: ChatMessage) {
+    try {
+      const response = await fetch("/api/coach/sessions/" + encodeURIComponent(sessionId) + "/messages", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ role: message.role, content: message.content, answer: message.answer, runId: message.runId })
+      });
+      await readApiResponse<{ message: ChatMessage }>(response, "无法保存 Coach 消息。");
+    } catch (requestError) {
+      setError(errorMessage(requestError, "无法保存 Coach 消息。"));
+    }
+  }
+
+  async function importLegacySessions(): Promise<CoachSession[]> {
+    let legacy: CoachSession[] = [];
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem(LEGACY_STORAGE_KEY) ?? "[]") as CoachSession[];
+      legacy = Array.isArray(parsed) ? parsed.slice(0, 20) : [];
+    } catch {
+      window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+      return [];
+    }
+    const imported: CoachSession[] = [];
+    for (const oldSession of legacy) {
+      try {
+        const response = await fetch("/api/coach/sessions", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ title: oldSession.title })
+        });
+        if (!response.ok) continue;
+        const payload = await readApiResponse<{ session: CoachSession }>(response, "无法迁移旧 Coach 会话。");
+        for (const message of oldSession.messages.slice(0, 24)) await appendMessage(payload.session.id, message);
+        imported.push({ ...payload.session, messages: oldSession.messages });
+      } catch {
+        continue;
+      }
+    }
+    if (imported.length) window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+    return imported;
+  }
 
   async function loadMatches() {
     try {
@@ -231,18 +297,6 @@ export function CoachClient() {
     setSessions((current) => current.map((session) => session.id === sessionId ? updater(session) : session));
   }
 
-  function newSession(matchId?: string) {
-    const session = createSession(matchId);
-    setSessions((current) => [session, ...current]);
-    setActiveSessionId(session.id);
-    setQuestion("");
-    setError(null);
-    if (matchId) {
-      setRightPanel("detail");
-      void loadMatchDetail(matchId);
-    }
-  }
-
   function activateSession(session: CoachSession) {
     setActiveSessionId(session.id);
     const ownedMatch = session.matchId ? matches.some((match) => match.matchId === session.matchId) : false;
@@ -251,9 +305,10 @@ export function CoachClient() {
   }
 
   function attachMatch(matchId: string) {
-    if (!activeSession) newSession(matchId);
+    if (!activeSession) void newSession(matchId);
     else {
       updateSession(activeSession.id, (session) => ({ ...session, matchId, updatedAt: now() }));
+      void saveSession(activeSession.id, { matchId });
       setRightPanel("detail");
       void loadMatchDetail(matchId);
     }
@@ -262,6 +317,7 @@ export function CoachClient() {
   function detachMatch() {
     if (!activeSession) return;
     updateSession(activeSession.id, (session) => ({ ...session, matchId: undefined, updatedAt: now() }));
+    void saveSession(activeSession.id, { matchId: null });
     setRightPanel("matches");
   }
 
@@ -274,6 +330,7 @@ export function CoachClient() {
       setLoggedIn(true);
       setAccountMode("demo");
       await loadMatches();
+      await loadSessions();
     } catch (requestError) {
       setError(errorMessage(requestError, "Demo 登录失败。"));
     } finally {
@@ -320,12 +377,17 @@ export function CoachClient() {
     const matchId = activeMatch?.matchId;
     const userMessage: ChatMessage = { id: id("user"), role: "user", content: text, createdAt: now() };
     const history = activeSession.messages.slice(-12).map((message) => ({ role: message.role, content: message.content }));
+    const title = activeSession.messages.length ? activeSession.title : sessionTitle(text);
     updateSession(sessionId, (session) => ({
       ...session,
-      title: session.messages.length ? session.title : sessionTitle(text),
+      title,
       messages: [...session.messages, userMessage],
       updatedAt: now()
     }));
+    await Promise.all([
+      saveSession(sessionId, { title, matchId: activeSession.matchId ?? null }),
+      appendMessage(sessionId, userMessage)
+    ]);
     setQuestion("");
     setLoading(true);
     setError(null);
@@ -336,7 +398,9 @@ export function CoachClient() {
         body: JSON.stringify({ question: text, scope: matchId ? { type: "match", matchId } : { type: "recent" }, conversation: history })
       });
       const result = await readApiResponse<AnalysisResult>(response, "分析失败，请重试。");
-      updateSession(sessionId, (session) => ({ ...session, messages: [...session.messages, answerMessage(result)], updatedAt: now() }));
+      const assistantMessage = answerMessage(result);
+      updateSession(sessionId, (session) => ({ ...session, messages: [...session.messages, assistantMessage], updatedAt: now() }));
+      await appendMessage(sessionId, assistantMessage);
     } catch (requestError) {
       setError(errorMessage(requestError, "分析失败，请重试。"));
     } finally {
@@ -357,7 +421,6 @@ export function CoachClient() {
       setMatchDetails({});
       setSessions([]);
       setActiveSessionId("");
-      window.localStorage.removeItem(STORAGE_KEY);
     } catch (requestError) {
       setError(errorMessage(requestError, "断开账号失败，请重试。"));
     } finally {
