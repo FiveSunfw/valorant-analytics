@@ -189,7 +189,7 @@ $env:RIOT_POST_AUTH_REDIRECT_URL = "http://127.0.0.1:1420/"
 npm run tauri:dev --workspace=@valorant/desktop
 ```
 
-生产构建通过已提交的 `apps/desktop/.env.production` 连接 `https://valorant-analytics-api.vercel.app`；该文件只有公开地址，不得放入密钥。Vercel API 项目通过根目录 `api/index.ts` 将请求适配到当前 TypeScript Fastify API，至少需要配置 `DATABASE_URL`、`REDIS_URL`，实际同步还需要可访问的 `RABBITMQ_URL` 与独立 Worker。Vercel Web 项目需要把 `API_BASE_URL` 设置为上述 API 域名。Riot RSO 上线时同时设置：
+生产构建通过已提交的 `apps/desktop/.env.production` 连接 `https://valorant-analytics-api.vercel.app`；该文件只有公开地址，不得放入密钥。Vercel API 项目通过根目录 `api/index.mjs` 将请求适配到当前 TypeScript Fastify API，至少需要配置 `DATABASE_URL`、`REDIS_URL`，实际同步还需要可访问的 `RABBITMQ_URL` 与独立 Worker。Vercel Web 项目需要把 `API_BASE_URL` 设置为上述 API 域名。Riot RSO 上线时同时设置：
 
 ```text
 RIOT_REDIRECT_URI=https://valorant-analytics-api.vercel.app/auth/riot/callback
