@@ -204,7 +204,7 @@ RIOT_POST_AUTH_REDIRECT_URL=https://<web-production-domain>/?riot=connected
 npm run build --workspace=@valorant/desktop
 ```
 
-Windows EXE 通过 GitHub Actions 在云端构建，不需要在本机安装 Visual Studio、MSVC 或 Windows SDK。提交桌面相关改动后，工作流会自动运行；也可以在仓库的 `Actions` → `Build desktop Windows app` → `Run workflow` 手动触发。构建完成后，在对应运行记录的 `Artifacts` 中下载 `valorant-analytics-coach-windows-x64`。生产 API 地址来自已提交的 `apps/desktop/.env.production`，不会把密钥打进客户端。
+Windows 便携 EXE 通过 GitHub Actions 在云端构建，不需要在本机安装 Visual Studio、MSVC 或 Windows SDK。工作流使用 Tauri 的 `--no-bundle` 模式，只编译客户端本体，不生成 MSI/NSIS 安装器，也不会把构建目录和依赖上传。提交桌面相关改动后，工作流会自动运行；也可以在仓库的 `Actions` → `Build desktop Windows app` → `Run workflow` 手动触发。构建完成后，在对应运行记录的 `Artifacts` 中下载 `valorant-analytics-coach-windows-x64`。生产 API 地址来自已提交的 `apps/desktop/.env.production`，不会把密钥打进客户端。
 
 Actions 使用 GitHub 的 Windows 构建机提供 Tauri 所需的 Windows 编译环境；本地只需要 Node.js 依赖即可运行前端构建和开发模式。
 

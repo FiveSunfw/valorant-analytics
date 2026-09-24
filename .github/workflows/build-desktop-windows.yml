@@ -61,7 +61,7 @@ jobs:
         run: npm ci
 
       - name: Build Tauri Windows executable
-        run: npm run tauri:build --workspace=@valorant/desktop
+        run: npm run tauri:build --workspace=@valorant/desktop -- --no-bundle --verbose
 
       - name: Prepare minimal artifact
         shell: pwsh
