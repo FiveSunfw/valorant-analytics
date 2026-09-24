@@ -1,0 +1,83 @@
+name: Build desktop Windows app
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "apps/desktop/**"
+      - "apps/web/app/coach-client.tsx"
+      - "apps/web/app/client.css"
+      - "apps/web/app/globals.css"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.base.json"
+      - ".github/workflows/build-desktop-windows.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/desktop/**"
+      - "apps/web/app/coach-client.tsx"
+      - "apps/web/app/client.css"
+      - "apps/web/app/globals.css"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.base.json"
+      - ".github/workflows/build-desktop-windows.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-windows-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    name: Build Windows EXE
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        shell: pwsh
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add x86_64-pc-windows-msvc
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Tauri Windows executable
+        run: npm run tauri:build --workspace=@valorant/desktop -- --no-bundle --verbose
+
+      - name: Prepare minimal artifact
+        shell: pwsh
+        run: |
+          $artifactDir = Join-Path $env:GITHUB_WORKSPACE "desktop-artifact"
+          New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
+          $executables = Get-ChildItem -Path "apps/desktop/src-tauri/target/release" -Filter "*.exe" -File
+          if (-not $executables) {
+            throw "No Windows executable was produced"
+          }
+          $executables | Copy-Item -Destination $artifactDir
+
+      - name: Upload Windows executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: valorant-analytics-coach-windows-x64
+          path: desktop-artifact/*.exe
+          if-no-files-found: error
+          retention-days: 14
