@@ -38,6 +38,10 @@ body { background: var(--client-canvas); }
 .attached-context { display: flex; align-items: center; gap: 9px; padding: 12px 42px; border-bottom: 1px solid var(--client-line); background: #faf6ef; }
 .attached-context > span { color: var(--client-muted); font-size: 10px; }
 .attached-context > button { margin-left: auto; border: 0; background: transparent; color: var(--client-red); font-size: 11px; }
+.stale-context { margin: 12px 34px 0; padding: 12px 16px; display: flex; align-items: center; gap: 12px; border: 1px solid rgba(255, 183, 77, .32); background: rgba(255, 183, 77, .08); color: #d7dbe6; }
+.stale-context b { color: #b56a16; }
+.stale-context span { color: var(--client-muted); font-size: 11px; }
+.stale-context button { margin-left: auto; border: 0; background: transparent; color: #b56a16; font-weight: 700; }
 .match-chip { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; padding: 6px 9px; border: 1px solid var(--client-line); background: var(--client-paper); color: var(--client-ink); font-size: 11px; }
 .match-chip-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--client-red); }
 .match-chip b { font-size: 11px; }
@@ -158,8 +162,7 @@ body { background: var(--client-canvas); }
   .client-login-card { padding: 28px; }
   .client-login-brand { left: 20px; }
   .client-login-note { left: 20px; right: 20px; text-align: center; }
-  .attached-context { padding-left: 20px; padding-right: 20px; flex-wrap: wrap; }
+  .attached-context, .stale-context { margin-left: 20px; margin-right: 20px; padding-left: 20px; padding-right: 20px; flex-wrap: wrap; }
   .attached-context > button { margin-left: 0; }
   .client-error { padding: 10px 20px; }
 }
-
