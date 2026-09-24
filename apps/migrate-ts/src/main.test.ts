@@ -16,6 +16,8 @@ describe("migrate", () => {
     expect(calls.some((sql) => sql.includes("estimated_cost_usd"))).toBe(true);
     expect(calls.some((sql) => sql.includes("model_provider"))).toBe(true);
     expect(calls.some((sql) => sql.includes("provider_memory_id"))).toBe(true);
+    expect(calls.some((sql) => sql.includes("coach_sessions"))).toBe(true);
+    expect(calls.some((sql) => sql.includes("coach_messages"))).toBe(true);
     expect(calls.at(-1)).toContain("INSERT INTO schema_migrations");
   });
 });

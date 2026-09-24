@@ -140,6 +140,14 @@ const migrations = [{
   statements: [
     "ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS model_provider VARCHAR(128) NOT NULL DEFAULT 'unknown'"
   ]
+}, {
+  id: "20260924_0013",
+  statements: [
+    `CREATE TABLE IF NOT EXISTS coach_sessions (id UUID PRIMARY KEY, user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE, title VARCHAR(128) NOT NULL DEFAULT '新的复盘会话', match_id VARCHAR(128), created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
+    "CREATE INDEX IF NOT EXISTS ix_coach_sessions_user_updated_at ON coach_sessions (user_id, updated_at DESC)",
+    `CREATE TABLE IF NOT EXISTS coach_messages (id UUID PRIMARY KEY, session_id UUID NOT NULL REFERENCES coach_sessions(id) ON DELETE CASCADE, role VARCHAR(16) NOT NULL CHECK (role IN ('user', 'assistant')), content TEXT NOT NULL, answer JSONB, run_id UUID, created_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
+    "CREATE INDEX IF NOT EXISTS ix_coach_messages_session_created_at ON coach_messages (session_id, created_at ASC)"
+  ]
 }];
 
 export async function migrate(pool: SqlExecutor): Promise<void> {

@@ -33,8 +33,19 @@ import { enqueueAccountSync } from "./sync-queue.js";
 import { KnowledgeRagClient } from "./knowledge-rag.js";
 import { mem0ApiKey, mem0BaseUrl, mem0TimeoutMs } from "./config.js";
 import { memoryProviderFromEnvironment, type MemoryProvider } from "./mem0-memory.js";
+import { PostgresCoachSessionStore, type CoachSessionService } from "./coach-session.js";
 
 const SESSION_COOKIE = "valorant_session";
+const coachSessionInput = z.object({
+  title: z.string().trim().min(1).max(128).optional(),
+  matchId: z.string().trim().min(1).max(128).nullable().optional()
+}).strict();
+const coachMessageInput = z.object({
+  role: z.enum(["user", "assistant"]),
+  content: z.string().trim().min(1).max(4_000),
+  answer: z.record(z.unknown()).optional(),
+  runId: z.string().uuid().optional()
+}).strict();
 
 type RuntimeDependencies = {
   pool: Pool;
@@ -46,6 +57,7 @@ type RuntimeDependencies = {
   agentTrace?: AgentTraceSink | null;
   demoMode?: boolean;
   evalMode?: boolean;
+  coachSessions?: CoachSessionService;
   syncEnqueuer?: (job: AccountSyncJob) => Promise<string>;
   demoSession?: { create(profile?: DemoFixtureProfile): Promise<{ token: string; expiresAt: Date }> };
 };
@@ -93,6 +105,7 @@ export function buildApp(dependencies: RuntimeDependencies = {
   const agentTrace = dependencies.agentTrace === undefined ? new PostgresAgentTraceSink(dependencies.pool) : dependencies.agentTrace;
   const demoMode = dependencies.demoMode ?? enableDemoMode;
   const evalMode = dependencies.evalMode ?? enableEvalMode;
+  const coachSessions = dependencies.coachSessions ?? new PostgresCoachSessionStore(dependencies.pool);
   const demoSession = dependencies.demoSession ?? new DemoSessionService(dependencies.pool);
   const syncEnqueuer = dependencies.syncEnqueuer ?? enqueueAccountSync;
 
@@ -207,6 +220,61 @@ export function buildApp(dependencies: RuntimeDependencies = {
     const detail = await analyticsReader.getMatchDetail(session.userId, matchId);
     if (!detail.match) return reply.code(404).send({ error: "match_not_found", message: "The selected competitive match was not found" });
     return detail;
+  });
+  app.get("/coach/sessions", async (request) => {
+    const session = await oauth.getSession(readCookie(request.headers.cookie, SESSION_COOKIE));
+    if (!session) throw new RiotOAuthError("authorization", 401, "A valid product session is required");
+    return { sessions: await coachSessions.list(session.userId) };
+  });
+  app.post("/coach/sessions", async (request, reply) => {
+    const session = await oauth.getSession(readCookie(request.headers.cookie, SESSION_COOKIE));
+    if (!session) throw new RiotOAuthError("authorization", 401, "A valid product session is required");
+    const parsed = coachSessionInput.safeParse(request.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_input", message: "Session title or match context is invalid" });
+    const created = await coachSessions.create(session.userId, parsed.data);
+    if (!created && parsed.data.matchId) return reply.code(404).send({ error: "match_not_found", message: "The selected competitive match was not found" });
+    if (!created) return reply.code(500).send({ error: "internal", message: "Coach session could not be created" });
+    return reply.code(201).send({ session: created });
+  });
+  app.get("/coach/sessions/:sessionId", async (request, reply) => {
+    const session = await oauth.getSession(readCookie(request.headers.cookie, SESSION_COOKIE));
+    if (!session) throw new RiotOAuthError("authorization", 401, "A valid product session is required");
+    const sessionId = z.string().uuid().safeParse((request.params as { sessionId?: string }).sessionId);
+    if (!sessionId.success) return reply.code(400).send({ error: "invalid_input", message: "sessionId is invalid" });
+    const coachSession = await coachSessions.get(session.userId, sessionId.data);
+    if (!coachSession) return reply.code(404).send({ error: "not_found", message: "Coach session was not found" });
+    return { session: coachSession };
+  });
+  app.put("/coach/sessions/:sessionId", async (request, reply) => {
+    const session = await oauth.getSession(readCookie(request.headers.cookie, SESSION_COOKIE));
+    if (!session) throw new RiotOAuthError("authorization", 401, "A valid product session is required");
+    const sessionId = z.string().uuid().safeParse((request.params as { sessionId?: string }).sessionId);
+    if (!sessionId.success) return reply.code(400).send({ error: "invalid_input", message: "sessionId is invalid" });
+    const parsed = coachSessionInput.safeParse(request.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_input", message: "Session title or match context is invalid" });
+    const updated = await coachSessions.update(session.userId, sessionId.data, parsed.data);
+    if (!updated) return reply.code(404).send({ error: "not_found", message: "Coach session or match context was not found" });
+    return { session: updated };
+  });
+  app.post("/coach/sessions/:sessionId/messages", async (request, reply) => {
+    const session = await oauth.getSession(readCookie(request.headers.cookie, SESSION_COOKIE));
+    if (!session) throw new RiotOAuthError("authorization", 401, "A valid product session is required");
+    const sessionId = z.string().uuid().safeParse((request.params as { sessionId?: string }).sessionId);
+    if (!sessionId.success) return reply.code(400).send({ error: "invalid_input", message: "sessionId is invalid" });
+    const parsed = coachMessageInput.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_input", message: "A bounded coach message is required" });
+    if (parsed.data.answer && JSON.stringify(parsed.data.answer).length > 32_000) return reply.code(400).send({ error: "invalid_input", message: "Coach answer is too large" });
+    const message = await coachSessions.appendMessage(session.userId, sessionId.data, parsed.data);
+    if (!message) return reply.code(404).send({ error: "not_found", message: "Coach session was not found" });
+    return reply.code(201).send({ message });
+  });
+  app.delete("/coach/sessions/:sessionId", async (request, reply) => {
+    const session = await oauth.getSession(readCookie(request.headers.cookie, SESSION_COOKIE));
+    if (!session) throw new RiotOAuthError("authorization", 401, "A valid product session is required");
+    const sessionId = z.string().uuid().safeParse((request.params as { sessionId?: string }).sessionId);
+    if (!sessionId.success) return reply.code(400).send({ error: "invalid_input", message: "sessionId is invalid" });
+    if (!await coachSessions.delete(session.userId, sessionId.data)) return reply.code(404).send({ error: "not_found", message: "Coach session was not found" });
+    return reply.code(204).send();
   });
   app.get("/benchmark", async (request) => {
     const session = await oauth.getSession(readCookie(request.headers.cookie, SESSION_COOKIE));

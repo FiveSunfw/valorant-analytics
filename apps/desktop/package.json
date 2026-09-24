@@ -1,0 +1,8 @@
+{
+  "name": "@valorant/desktop",
+  "private": true,
+  "scripts": {
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
+  }
+}
