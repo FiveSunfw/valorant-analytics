@@ -131,6 +131,9 @@ export function buildApp(dependencies: RuntimeDependencies = {
   const demoSession = dependencies.demoSession ?? new DemoSessionService(dependencies.pool);
   const syncEnqueuer = dependencies.syncEnqueuer ?? enqueueAccountSync;
 
+  // Liveness probe: must never touch PostgreSQL, Redis or any external model so
+  // that an unhealthy dependency cannot take the process out of rotation.
+  app.get("/health/live", async () => ({ status: "ok", service: "api" }));
   app.get("/health", async () => {
     await dependencies.pool.query("SELECT 1");
     await dependencies.redis.ping();

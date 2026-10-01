@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { access, writeFile } from "node:fs/promises";
-import { inspectVideoTranscript, parseJson3Subtitle, resolveKnowledgeSource } from "./knowledge-import.js";
+import { tmpdir } from "node:os";
+import { basename, dirname, isAbsolute, join } from "node:path";
+import {
+  TRANSCRIPT_TEMP_PREFIX,
+  inspectVideoTranscript,
+  parseJson3Subtitle,
+  resolveKnowledgeSource,
+  transcriptTempDirectoryTemplate
+} from "./knowledge-import.js";
 
 describe("knowledge video importer", () => {
   it("only resolves registered Bilibili sources", () => {
@@ -26,6 +34,18 @@ describe("knowledge video importer", () => {
     expect(() => parseJson3Subtitle(JSON.stringify({ events: "not-an-array" }))).toThrow("events");
   });
 
+  it("builds the mkdtemp template with the platform separator under the system temp dir", () => {
+    const template = transcriptTempDirectoryTemplate();
+    // Regression guard for the Windows-only `\\` concatenation that produced
+    // "/tmp\\valorant-knowledge-" on Linux and made mkdtemp fail with EACCES.
+    // The template must be exactly node:path's join of the OS temp dir and the
+    // prefix; a hard-coded backslash separator diverges from that on POSIX.
+    expect(template).toBe(join(tmpdir(), TRANSCRIPT_TEMP_PREFIX));
+    expect(isAbsolute(template)).toBe(true);
+    expect(dirname(template)).toBe(tmpdir());
+    expect(basename(template)).toBe(TRANSCRIPT_TEMP_PREFIX);
+  });
+
   it("keeps the extracted subtitle temporary and never stores the transcript", async () => {
     let subtitlePath = "";
     const result = await inspectVideoTranscript("bili-haven-defense", {
@@ -40,5 +60,32 @@ describe("knowledge video importer", () => {
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.segments[0].text).toBe("人工核对这一句");
     await expect(access(subtitlePath)).rejects.toThrow();
+  });
+
+  it("creates the temporary subtitle directory inside the system temp dir", async () => {
+    let observedDirectory = "";
+    const result = await inspectVideoTranscript("bili-haven-defense", {
+      runCommand: async (_file, args) => {
+        // mkdtemp appends six random characters, so the process actually writes
+        // into <prefix>XXXXXX. Record that real directory to prove the prefix is
+        // rooted at the OS temp directory on every platform.
+        observedDirectory = dirname(args[args.indexOf("--output") + 1]);
+        await writeFile(`${args[args.indexOf("--output") + 1].replace("%(id)s", "fixture")}.json3`, JSON.stringify({
+          events: [{ tStartMs: 0, dDurationMs: 1000, segs: [{ utf8: "跨平台临时目录" }] }]
+        }));
+        return { stdout: "", stderr: "" };
+      }
+    });
+
+    expect(result.ok).toBe(true);
+    expect(observedDirectory).not.toBe("");
+    // The directory is an absolute path directly under the OS temp dir.
+    expect(isAbsolute(observedDirectory)).toBe(true);
+    expect(dirname(observedDirectory)).toBe(tmpdir());
+    // The final segment starts with the shared prefix followed by the six
+    // random characters mkdtemp appends.
+    const name = basename(observedDirectory);
+    expect(name.startsWith(TRANSCRIPT_TEMP_PREFIX)).toBe(true);
+    expect(name.length).toBe(TRANSCRIPT_TEMP_PREFIX.length + 6);
   });
 });

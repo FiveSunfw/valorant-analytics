@@ -169,6 +169,13 @@ npm run dev --workspace=@valorant/web -- -p 3000
 - 本地 PostgreSQL：`localhost:15432`
 - 本地 Redis：`localhost:16379`
 
+### 健康探针
+
+API 暴露两个探针，用途不同，部署时应分别接线：
+
+- `GET /health/live`：**存活探针（liveness）**。固定返回 HTTP 200 与 `{"status":"ok","service":"api"}`，不访问 PostgreSQL、Redis 或任何外部模型。数据库、Redis 或模型故障时它仍返回 200，因此不会因为依赖不可用而被编排系统重启。该端点不返回依赖细节，也不承担授权检查。
+- `GET /health`：**就绪/依赖检查**。会实际执行 `SELECT 1` 与 Redis `PING`，只有数据库和 Redis 均可用时才返回 200 与 `{"status":"ok","service":"api","database":"ok","redis":"ok"}`；任一依赖故障时返回非 200。上线前用它确认依赖真实可用。
+
 ### 正式桌面客户端与 Coach 会话
 
 桌面端位于 `apps/desktop`，是一个内置 React/Vite 前端的 Tauri 客户端，不是打开远程 Web URL 的浏览器壳。它提供独立窗口、会话侧栏、对话区、比赛上下文栏、同步状态和账号状态；Coach 会话与消息仍由服务端持久化，Riot 密钥和 token 永远不进入客户端。
@@ -196,7 +203,7 @@ RIOT_REDIRECT_URI=https://valorant-analytics-api.vercel.app/auth/riot/callback
 RIOT_POST_AUTH_REDIRECT_URL=https://<web-production-domain>/?riot=connected
 ```
 
-部署后必须先验证 `GET /health` 返回数据库和 Redis 均为 `ok`，再构建桌面安装包。生产会话 Cookie 使用 `SameSite=None; Secure`，以允许 Tauri 客户端通过 HTTPS 携带服务端会话；开发环境仍使用 `SameSite=Lax`。
+部署后必须先验证 `GET /health` 返回数据库和 Redis 均为 `ok`（存活探针用 `GET /health/live`），再构建桌面安装包。生产会话 Cookie 使用 `SameSite=None; Secure`，以允许 Tauri 客户端通过 HTTPS 携带服务端会话；开发环境仍使用 `SameSite=Lax`。
 
 会话归属于同一个产品客户端用户，而不是某个 Riot 账号，因此同一个客户端可以切换 Riot 账号继续使用历史对话；每次挂载比赛或分析前，服务端仍会校验该比赛是否属于当前产品用户的已授权数据范围。桌面前端可以独立执行生产构建：
 
