@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExecFileOptions } from "node:child_process";
 import { KNOWLEDGE_SOURCES, type KnowledgeSource } from "./knowledge-catalog.js";
@@ -11,6 +11,10 @@ const execFileAsync = promisify(execFile);
 const SUBTITLE_LANGUAGES = "ai-zh,zh-Hans,zh-CN";
 const COMMAND_TIMEOUT_MS = 90_000;
 const MAX_OUTPUT_BUFFER = 4 * 1024 * 1024;
+
+// The temporary subtitle directory prefix, joined with the OS temp dir using the
+// platform path separator so the same code works on Windows and POSIX hosts.
+export const TRANSCRIPT_TEMP_PREFIX = "valorant-knowledge-";
 
 export type TranscriptImportFailureCode =
   | "source_not_allowed"
@@ -55,6 +59,18 @@ const runCommand: RunCommand = async (file, args, options) => {
 export function resolveKnowledgeSource(sourceIdOrUrl: string): KnowledgeSource | undefined {
   const value = sourceIdOrUrl.trim();
   return KNOWLEDGE_SOURCES.find((source) => source.id === value || source.url === value);
+}
+
+/**
+ * Builds the temporary directory template for subtitle extraction. `mkdtemp`
+ * appends six random characters to this template, so the value must be a path
+ * whose parent is the OS temp directory and whose final segment is the prefix.
+ * Using `node:path.join` keeps the separator correct on both Windows and POSIX
+ * (a hard-coded `\\` produced `/tmp\\valorant-knowledge-` on Linux, which
+ * `mkdtemp` interpreted as a missing parent directory and rejected with EACCES).
+ */
+export function transcriptTempDirectoryTemplate(): string {
+  return join(tmpdir(), TRANSCRIPT_TEMP_PREFIX);
 }
 
 export function parseJson3Subtitle(input: string): TranscriptSegment[] {
@@ -130,7 +146,7 @@ export async function inspectVideoTranscript(
     };
   }
 
-  const directory = await mkdtemp(`${tmpdir()}\\valorant-knowledge-`);
+  const directory = await mkdtemp(transcriptTempDirectoryTemplate());
   try {
     const outputTemplate = resolve(directory, "%(id)s");
     let commandFailure: TranscriptImportFailure | undefined;
